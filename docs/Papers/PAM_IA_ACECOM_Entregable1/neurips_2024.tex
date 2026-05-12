@@ -1,0 +1,721 @@
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+%     \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading neurips_2024
+
+
+% ready for submission
+\usepackage[final]{neurips_2024}
+
+
+% to compile a preprint version, e.g., for submission to arXiv, add add the
+% [preprint] option:
+%     \usepackage[preprint]{neurips_2024}
+
+
+% to compile a camera-ready version, add the [final] option, e.g.:
+%     \usepackage[final]{neurips_2024}
+
+
+% to avoid loading the natbib package, add option nonatbib:
+%    \usepackage[nonatbib]{neurips_2024}
+
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{xcolor}         % colors
+\usepackage{amsmath} 
+
+\usepackage{graphicx}
+\usepackage{float} % Para usar la opción [H] y forzar la posición
+
+
+\title{Development of a visual decoder of mental images}
+
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to LaTeX to determine where to break the
+% lines. Using \AND forces a line break at that point. So, if LaTeX puts 3 of 4
+% authors names on the first line, and the last on the second line, try using
+% \AND instead of \And before the third author name.
+
+
+\author{
+  Alvaro Jesus Taipe Cotrina\\
+  School of Computer Science \\
+  Faculty of Science\\
+  Universidad Nacional de Ingeniería\\
+  Lima, PE 15333 \\
+  \texttt{alvaro.taipe.c@uni.pe} 
+  % examples of more authors
+}
+
+
+\begin{document}
+
+
+\maketitle
+
+
+\begin{abstract}
+   The development of visual decoders capable of reconstructing images from human brain activity has seen unprecedented progress. This report outlines a project to develop an AI model capable of decoding visual stimuli from public fMRI datasets. We review the state-of-the-art, focusing on studies from 2024-2025 that leverage advanced generative and analytical models. The theoretical foundation establishes the mathematical rigor behind the chosen architectures: the \textbf{U-Net} for spatial reconstruction, \textbf{CLIP} for semantic alignment, and \textbf{Latent Diffusion Models (LDM)} for high-fidelity generation. The proposed methodology details a two-module AI: an \textbf{Encoder} trained via regression to map fMRI signals to the CLIP latent space, and a pre-trained \textbf{Generative Decoder} that uses this latent vector as a condition via cross-attention mechanisms to synthesize the final image.
+\end{abstract}
+% RESUMEN 
+\section{Resumen}
+El desarrollo de decodificadores visuales capaces de reconstruir imágenes a partir de la actividad cerebral humana ha experimentado un avance sin precedentes. Este informe describe un proyecto para desarrollar un modelo de IA capaz de decodificar estímulos visuales a partir de conjuntos de datos públicos de RNMf. Revisamos el estado del arte, centrándonos en estudios recientes (2024-2025) que aprovechan modelos generativos avanzados. El fundamento teórico se construye sobre la base matemática de la arquitectura \textbf{U-Net} (reconstrucción espacial), el espacio de \textit{embedding} multimodal de \textbf{CLIP} (alineación semántica) y los \textbf{Modelos de Difusión Latente} (LDM). La metodología propuesta detalla una IA de dos módulos: un \textbf{Codificador} entrenado para mapear señales de RNMf al espacio latente de CLIP, y un \textbf{Decodificador Generativo} pre-entrenado que utiliza este vector latente como condición para sintetizar la imagen final.
+
+%  INTRODUCCIÓN 
+\section{Introducción}
+La decodificación de la actividad cerebral para externalizar el contenido de la experiencia mental, como las imágenes visuales, representa una de las fronteras más complejas de la neurociencia y la inteligencia artificial. A pesar de los avances en interfaces cerebro-computadora (BCI), los esfuerzos se han centrado en la decodificación de intenciones motoras  o en la integración de señales multimodales como \textbf{Electroencefalografía (EEG)} y  \textbf{Resonancia Magnética Funcional (RNMf)} \cite{4}.
+
+Sin embargo, la traducción directa de una 'imagen mental' semánticamente rica a una representación digital fotorrealista sigue siendo un desafío mayúsculo.Pues si bien la Resonancia Magnética Funcional (RNMf) nos permite observar la actividad cerebral midiendo la señal \textbf{Blood-Oxygen-Level-Dependent (BOLD)} , estos datos presentan desafíos significativos.
+
+El problema computacional fundamental radica en mapear una señal neuronal, que es intrínsecamente ruidosa, de alta dimensionalidad y variable entre sujetos, a un espacio de salida de imágenes naturales; traducir estos patrones de activación volumétrica, como los vóxeles, en imágenes 2D semánticamente precisas es aún más complejo. Este proyecto busca desarrollar una IA capaz de decodificar imágenes mentales aprovechando los vastos conjuntos de datos públicos de RNMf de alta resolución (7T), como el proporcionado por Allen et al. \cite{2}, que utiliza la señal BOLD como indicador indirecto de la actividad neuronal.
+
+Recientemente, la convergencia entre modelos de lenguaje-visión como \textbf{Contrastive Language-Image Pre-training (CLIP)} \cite{8} y modelos generativos probabilísticos como \textbf{Modelos de Difusión Latente (LDM)} \cite{9} ha abierto nuevas puertas para resolver este problema inverso \cite{5, 13}, pues ofrecen una solución al poseer un "diccionario" visual pre-entrenado. Nuestra tarea es enseñar a una IA a navegar este diccionario usando la señal cerebral como guía. 
+\section{Objetivos}
+La meta principal de este proyecto es desarrollar e implementar un sistema de decodificación visual basado en aprendizaje profundo que reconstruya imágenes semánticamente coherentes a partir de señales de resonancia magnética funcional (fMRI) utilizando modelos de difusión latente y, por el camino, lograr los siguientes puntos:
+\begin{itemize}
+    \item Pre-procesar y estandarizar los datos de actividad cerebral de los datasets públicos (NSD y BOLD5000) para garantizar su compatibilidad con arquitecturas neuronales.
+    \item Formalizar e implementar un Codificador (Módulo 1) basado en redes neuronales que mapee las señales RNMf al espacio latente multimodal de CLIP, minimizando la pérdida de información semántica.
+    \item Integrar el codificador cerebral con un Modelo de Difusión Latente pre-entrenado (Módulo 2) mediante mecanismos de atención cruzada (cross-attention) para guiar la generación de imágenes.
+    \item Evaluar la calidad de las reconstrucciones y la viabilidad del uso de espacios latentes semánticos como interfaz cerebro-computadora.
+\end{itemize}
+
+
+% ESTADO DEL ARTE 
+\section{Estado del Arte}
+ Nos centramos en los estudios más significativos que definen la frontera actual y guían nuestra metodología:
+
+\begin{itemize}
+    \item \textbf{Aduen, J., et al. (2025)\cite{1}.} Propone un modelo generativo jerárquico que refleja la propia jerarquía de la corteza visual. Utiliza un VAE para capturar detalles de bajo nivel (bordes, texturas) y un LDM para la composición semántica global. Este enfoque de "divide y vencerás" es clave para decodificar escenas naturales complejas.
+    
+    \item \textbf{Bogdan, P. C., et al. (2024)\cite{3}.} Este trabajo utiliza LLMs para analizar cómo el cerebro codifica información relacional. Aunque no es un decodificador visual \textit{per se}, su metodología para mapear patrones de RNMf a \textit{embeddings} de lenguaje es directamente aplicable a nuestro Módulo 1 (Codificador Cerebral) para alinear la señal cerebral con un espacio semántico.
+    
+    \item \textbf{Li, S., et al. (2024)\cite{4}.} Revisa los algoritmos de decodificación centrales para Interfaces Cerebro-Computadora (BCI) multimodales. Proporciona un marco de trabajo esencial sobre cómo fusionar diferentes tipos de señales (ej. RNMf y EEG) y qué arquitecturas de IA son más eficientes para la decodificación en tiempo real.
+    
+    \item \textbf{Lin, Z., et al. (2024)\cite{5}.} "Brain-Diffuser" es un \textit{framework} de alta fidelidad que propone un autoencoder de RNMf antes de condicionar el LDM. Este paso intermedio de compresión y limpieza de la señal cerebral ($z_{fMRI}$) estabiliza el entrenamiento y mejora la calidad de la imagen reconstruida.
+    
+    \item \textbf{Ozcelik, F., \& VanRullen, R. (2024)\cite{6}.} Introduce la "Traducción Imagen-a-Imagen Supervisada por el Cerebro". En lugar de generar desde cero, su modelo \textit{corrige} una imagen candidata para que se parezca más al percepto del sujeto. Utiliza una "pérdida cerebral" ($\mathcal{L} = ||V_{real} - V_{pred}||^2$) que es un concepto poderoso para el \textit{fine-tuning}.
+    
+    \item \textbf{Puah, J. H., et al. (2024)\cite{7}.} Aunque se centra en EEG (una modalidad más ruidosa pero portátil), su \textit{framework} "NECOMIMI" para la imaginación multimodal es relevante. Demuestra que incluso con señales de baja resolución espacial se pueden generar imágenes coherentes, reforzando la viabilidad de la decodificación de la \textit{imaginación} (no solo la percepción).
+    
+    \item \textbf{Scotti, P. S., et al. (2024)\cite{10}.} Propone modelos generativos "inspirados en el cerebro" que intentan imitar la arquitectura computacional del sistema visual. Este enfoque, que modela explícitamente las áreas visuales tempranas vs. tardías, puede guiar el diseño de nuestro Módulo 1 (Codificador Cerebral) para que sea más eficiente y biológicamente plausible.
+\end{itemize}
+
+%FUNDAMENTO TEÓRICO 
+\section{Fundamento Teórico}
+El objetivo fundamental de nuestro Módulo 2 es sintetizar una imagen $I \in \mathbb{R}^{H \times W \times C}$ ;donde $H$ es la altura, $W$ el ancho y $C$ los canales de color, típicamente 3 para RGB a partir de un vector latente $z$. Para ello, debemos partir de la unidad básica de procesamiento \cite{14}.
+
+\subsection{La Base: Redes Neuronales (MLP)}
+
+La unidad computacional elemental es el \textbf{perceptrón}, una función parametrizada que realiza una transformación afín seguida de una no-linealidad $\sigma$ (típicamente ReLU, sigmoid o tanh):
+\begin{equation}
+y = \sigma(\mathbf{w}^T \mathbf{x} + b)
+\end{equation}
+donde $\mathbf{x} \in \mathbb{R}^{n}$ es la entrada, $\mathbf{w} \in \mathbb{R}^{n}$ son los pesos, $b \in \mathbb{R}$ es el sesgo, y $\sigma$ introduce capacidad de aproximación no-lineal.
+
+El \textbf{Teorema de Aproximación Universal:} sea $\sigma(\cdot)$ una función de activación continua, acotada y no constante. El espacio de funciones computadas por una red neuronal con una sola capa oculta es denso en $C(K)$, donde $K$ es un subconjunto compacto de $\mathbb{R}^n$. 
+Esto establece que una red neuronal con una capa oculta suficientemente ancha puede aproximar cualquier función continua $f: \mathbb{R}^n \rightarrow \mathbb{R}^m$ en un compacto con precisión arbitraria.
+Garantizando matemáticamente que, con suficientes neuronas, nuestra red pueda aproximar cualquier función continua, incluyendo la compleja función que mapea actividad cerebral a imágenes, con un error arbitrariamente pequeño $\epsilon$ \cite{14}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{TAu.png}
+    \caption{Representación visual del Teorema de Aproximación Universal: una red con una capa oculta ancha puede aproximar cualquier función continua en un compacto.}
+    \label{fig:teorema_universal}
+\end{figure}
+
+
+Una \textbf{Red Neuronal Multicapa (MLP)} es la composición de $L$ perceptrones organizados en capas:
+\begin{equation}
+\mathbf{h}^{(0)} = \mathbf{x}, \quad \mathbf{h}^{(l)} = \sigma(\mathbf{W}^{(l)} \mathbf{h}^{(l-1)} + \mathbf{b}^{(l)}), \quad l = 1, \ldots, L
+\end{equation}
+donde $\mathbf{h}^{(l)} \in \mathbb{R}^{d_l}$ es la representación en la capa $l$, y $\mathbf{W}^{(l)} \in \mathbb{R}^{d_l \times d_{l-1}}$ es la matriz de pesos.
+
+La capacidad de la red para aprender relaciones complejas reside en la no-linealidad y el método de optimización.
+
+\textbf{Funciones de Activación:} Sin ellas, una red profunda sería equivalente a una sola capa lineal.
+    \begin{itemize}
+        \item \textit{ReLU (Rectified Linear Unit):} $f(x) = \max(0, x)$. Es la más usada en capas ocultas por su eficiencia computacional y por mitigar el problema del desvanecimiento del gradiente.
+        \item \textit{Sigmoide / Tanh:} Usadas típicamente en capas de salida para acotar valores entre $[0,1]$ o $[-1,1]$.
+    \end{itemize}
+    
+\textbf{Aprendizaje mediante Descenso de Gradiente:}
+    Para encontrar los pesos óptimos $w$, definimos una función de pérdida $\mathcal{L}(\hat{y}, y)$ (como el Error Cuadrático Medio) que mide la discrepancia entre la predicción y el valor real. El aprendizaje es un proceso iterativo donde los pesos se actualizan en dirección opuesta al gradiente del error \cite{14}: 
+    \begin{equation}
+        w \leftarrow w - \eta \nabla_w \mathcal{L}
+    \end{equation}
+    donde:
+    \begin{itemize}
+    \item \textbf{$w$ (Pesos):} Representa el vector de parámetros ajustables de la red neuronal.
+    \item \textbf{$\eta$ (Tasa de aprendizaje):} Escalar positivo que determina el tamaño del paso en cada iteración de actualización; controla la velocidad de convergencia.
+    \item \textbf{$\nabla_w \mathcal{L}$ (Gradiente):} Vector de derivadas parciales de la función de pérdida con respecto a los pesos, indicando la dirección de mayor ascenso del error.
+    \end{itemize}
+
+\textbf{Regularización para evitar el Overfitting:}
+El entrenamiento busca un equilibrio entre dos modos de fallo:
+\begin{itemize}
+    \item \textbf{Underfitting (Subajuste):} El modelo es demasiado simple para capturar la señal subyacente (alto sesgo). En nuestro contexto, sería un decodificador incapaz de distinguir entre estados cerebrales básicos, resultando en un error alto tanto en entrenamiento como en validación.
+    \item \textbf{Overfitting (Sobreajuste):} El modelo memoriza el ruido aleatorio de los datos de entrenamiento en lugar de aprender el patrón general (alta varianza). Dado que las señales fMRI son ruidosas y de alta dimensión, este es el riesgo principal a mitigar mediante regularización.
+\end{itemize}
+Dado que los datos de RNMf son ruidosos y de alta dimensión, el sobreajuste es un riesgo crítico \cite{14}. Utilizamos técnicas de regularización que añaden un término de penalización a la función de pérdida total:
+\begin{equation}
+    \mathcal{L}_{total} = \mathcal{L}_{data} + \lambda R(w)
+\end{equation}
+\begin{itemize}
+    \item \textbf{Regularización L1 (Lasso):} $R(w) = \sum |w_i|$. Fomenta que muchos pesos sean exactamente cero, generando modelos "dispersos" (sparse), útil para selección de vóxeles.
+    \item \textbf{Regularización L2 (Ridge):} $R(w) = \sum w_i^2$. Penaliza pesos grandes, distribuyendo el error y suavizando la frontera de decisión.
+\end{itemize}
+
+\textbf{Limitaciones para Imágenes:} Para una imagen de resolución modesta $H \times W = 256 \times 256$ con $C=3$ canales, la entrada es un vector de dimensión $n = 256 \times 256 \times 3 = 196{,}608$. Una sola capa oculta con $d_1 = 1024$ neuronas requiere $W^{(1)} \in \mathbb{R}^{1024 \times 196608}$, es decir, $\sim 201$ millones de parámetros solo en la primera capa. Esto es:
+\begin{itemize}
+    \item \textbf{Computacionalmente prohibitivo:} Memoria y cómputo escalan cuadráticamente.
+    \item \textbf{Propenso a overfitting:} Más parámetros que ejemplos de entrenamiento típicamente disponibles.
+    \item \textbf{Ignora estructura espacial:} Las MLPs tratan píxeles como características independientes, descartando la correlación espacial local que define texturas, bordes y objetos.
+\end{itemize}
+
+\subsection{Redes Neuronales Convolucionales (CNN)}
+Las MLPs no escalan bien para imágenes debido a la enorme cantidad de parámetros. Las CNN resuelven esto aprovechando la estructura espacial local de los datos visuales \cite{14}.
+
+\textbf{Convolución Discreta y Multicanal: }
+La convolución es la operación matemática central de las CNNs. Dado un mapa de entrada $\mathbf{I} \in \mathbb{R}^{H \times W}$ (o un mapa de características de una capa anterior) y un kernel (filtro) aprendible $\mathbf{K} \in \mathbb{R}^{k_h \times k_w}$, la \textbf{convolución discreta 2D} se define como:
+\begin{equation}
+    S(i, j) = \sum_{m=0}^{k_h-1} \sum_{n=0}^{k_w-1} I(i \cdot s + m, j \cdot s + n) K(m, n)
+\end{equation}
+donde:
+\begin{itemize}
+    \item \textbf{$S(i, j)$:} Valor del píxel en la posición $(i, j)$ del mapa de características de salida resultante.
+    \textbf{$\mathbf{I}$:} Matriz de entrada (imagen o mapa de características previo) de dimensiones $H \times W$.
+    
+    \item \textbf{$\mathbf{K}$:} Kernel o filtro de convolución con pesos aprendibles de dimensiones $k_h \times k_w$.
+    
+    \item \textbf{$m, n$:} Índices iteradores que recorren las dimensiones espaciales del kernel para calcular el producto escalar.
+    
+    \item \textbf{$s$ (Stride):} Factor de paso que determina el desplazamiento del kernel sobre la entrada; controla la reducción de dimensionalidad espacial en la salida.
+\end{itemize}
+
+Esta operación desliza el kernel sobre toda la imagen, computando en cada posición el producto escalar entre el kernel y la región receptiva local \cite{14}.
+
+En la práctica, se utilizan múltiples kernels $\{\mathbf{K}_1, \ldots, \mathbf{K}_{C_{out}}\}$ para extraer $C_{out}$ mapas de características distintos, cada uno especializado en detectar patrones específicos como:bordes horizontales, texturas, esquinas, etc. 
+
+\textbf{Procesamiento Multicanal:}
+En la práctica, las capas operan sobre volúmenes. Una entrada tiene $C_{in}$ canales (ej. 3 para RGB). Un filtro no es una matriz 2D, sino un tensor 3D de tamaño $k_h \times k_w \times C_{in}$. La convolución suma las contribuciones de todos los canales:
+\begin{equation}
+S^{(c_{out})}(i, j) = \sum_{c_{in}=1}^{C_{in}} \sum_{m=0}^{k_h - 1} \sum_{n=0}^{k_w - 1} \mathbf{I}^{(c_{in})}(i + m, j + n) \mathbf{K}^{(c_{out}, c_{in})}(m, n) + b^{(c_{out})}
+\end{equation}
+donde $\mathbf{K}^{(c_{out})} \in \mathbb{R}^{k_h \times k_w \times C_{in}}$ es el kernel tridimensional para el canal de salida $c_{out}$, y $b^{(c_{out})}$ es el sesgo.
+Esto permite que la red aprenda correlaciones no solo espaciales, sino también entre canales (ej. correlación color-textura).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=.9\textwidth]{PMCNN.png}
+    \caption{\textbf{Esquema de Convolución Multicanal 3D.} Ilustración de cómo un tensor de entrada de profundidad $C_{in}$ es procesado por filtros volumétricos. Cada filtro se extiende a través de toda la profundidad de la entrada, sumando las contribuciones para generar un único canal en el mapa de salida $S$.}
+    \label{fig:cnn_multicanal}
+\end{figure}
+
+\paragraph{Propiedades Matemáticas de la Convolución:}
+
+\begin{enumerate}
+    \item \textbf{Invarianza a la Traslación:} Si el patrón detectado por $\mathbf{K}$ aparece en la posición $(i_0, j_0)$ o $(i_0 + \Delta i, j_0 + \Delta j)$, la respuesta $S$ será la misma (módulo la traslación en el mapa de salida). Formalmente:
+    \begin{equation}
+    \mathcal{T}_{\Delta}[S] = S * \mathcal{T}_{\Delta}[\mathbf{I}]
+    \end{equation}
+    donde $\mathcal{T}_{\Delta}$ denota el operador de traslación. Esto es crucial para visión: un gato sigue siendo un gato independientemente de su posición en la imagen.
+    
+    \item \textbf{Compartición de Pesos:} El mismo kernel $\mathbf{K}$ se aplica en todas las posiciones espaciales. Para una imagen $256 \times 256$ y un kernel $3 \times 3$, en lugar de aprender $\sim 600{,}000$ pesos independientes por posición, se aprenden solo $3 \times 3 = 9$ pesos reutilizados. Esto reduce dramáticamente el número de parámetros ($\sim 10^5$ veces) y mejora generalización.
+    
+    \item \textbf{Conectividad Local:} Cada neurona en $S(i,j)$ solo "ve" una región receptiva local de tamaño $k_h \times k_w$ en la entrada. Esto refleja la estructura jerárquica del sistema visual biológico, donde neuronas de V1 responden a campos receptivos locales.
+\end{enumerate}
+
+\subsubsection{Pooling (Submuestreo)}
+Para ganar invarianza a pequeñas traslaciones y reducir la dimensión, usamos \textit{Pooling}. A diferencia de la convolución, esta operación no tiene pesos aprendibles. Para el \textit{Max Pooling} en una ventana local de tamaño $k \times k$:
+\begin{equation}
+    S_{pool}(i, j) = \max_{(m, n) \in \text{Ventana}_{i,j}} (S(i \cdot s + m, j \cdot s + n))
+\end{equation}
+Esto selecciona la característica más prominente dentro de la vecindad local.
+
+La composición de capas convolucionales y pooling construye una \textbf{jerarquía de características}:
+\begin{itemize}
+    \item \textbf{Capas tempranas (cerca de la entrada):} Detectan características de bajo nivel: bordes orientados, esquinas, manchas de color. Los kernels aprendidos se asemejan a filtros de Gabor.
+    \item \textbf{Capas intermedias:} Componen características de bajo nivel en texturas, patrones geométricos simples (círculos, rejillas).
+    \item \textbf{Capas profundas (cerca de la salida):} Representan objetos completos, partes semánticas (rostros, ruedas, ventanas) y escenas globales.
+\end{itemize}
+
+Esta jerarquía es análoga a la organización del sistema visual ventral (V1 $\rightarrow$ V2 $\rightarrow$ V4 $\rightarrow$ IT), lo cual es relevante para nuestro Módulo 1, donde las señales fMRI de diferentes regiones de interés (ROIs) capturan niveles jerárquicos de procesamiento visual.
+
+\subsubsection{Convolución Transpuesta: Upsampling Aprendible}
+
+Mientras las CNNs realizan \textbf{downsampling} ($\mathbb{R}^{H \times W} \rightarrow \mathbb{R}^{H' \times W'}$ con $H' < H$), nuestro Módulo 2 requiere la operación inversa: \textbf{upsampling} ($\mathbb{R}^{h \times w} \rightarrow \mathbb{R}^{H \times W}$ con $H > h$). La \textbf{convolución transpuesta} (también llamada deconvolución, aunque técnicamente no es la inversa matemática) realiza esta transformación de manera aprendible.
+
+\paragraph{Definición Formal:}
+La convolución transpuesta puede entenderse como una operación que revierte la conectividad de una convolución. Si una convolución mapea entrada $\mathbf{x} \in \mathbb{R}^{n}$ a salida $\mathbf{y} \in \mathbb{R}^{m}$ mediante:
+\begin{equation}
+\mathbf{y} = \mathbf{C} \mathbf{x}
+\end{equation}
+donde $\mathbf{C} \in \mathbb{R}^{m \times n}$ es la matriz de convolución (sparse, con estructura Toeplitz), entonces la convolución transpuesta mapea $\mathbf{y} \in \mathbb{R}^{m}$ a $\hat{\mathbf{x}} \in \mathbb{R}^{n}$ mediante:
+\begin{equation}
+\hat{\mathbf{x}} = \mathbf{C}^T \mathbf{y}
+\end{equation}
+donde $\mathbf{C}^T$ es la transpuesta de $\mathbf{C}$.En términos de operaciones sobre imágenes, la convolución transpuesta con kernel $\mathbf{K} \in \mathbb{R}^{k \times k}$ y stride $s$:
+\begin{enumerate}
+    \item Inserta $s-1$ filas/columnas de ceros entre cada píxel de la entrada (proceso llamado "dilation" o "upsampling con ceros").
+    \item Aplica padding en los bordes.
+    \item Realiza una convolución estándar con el kernel $\mathbf{K}$.
+\end{enumerate}
+
+Esto produce un mapa de salida de mayor resolución espacial. Por ejemplo, para entrada $h \times w$, kernel $3 \times 3$ y stride 2, la salida es aproximadamente $2h \times 2w$.
+
+\subsection{Arquitectura U-Net, Embeddings y Skip Connections}
+Para nuestro Módulo 2, necesitamos una arquitectura capaz no solo de clasificar, sino de generar imágenes detalladas. La U-Net es el estándar para estas tareas de predicción densa.
+
+\paragraph{Autoencoders Visuales:}
+En el contexto de procesamiento de imágenes, esta arquitectura aprovecha la estructura espacial de los datos visuales para comprimir y reconstruir imágenes. La red se compone de una fase de contracción (Encoder) basada en convoluciones que reduce la dimensión espacial para capturar el contexto semántico ("qué hay en la imagen"), y una fase de expansión (Decoder) que recupera la resolución espacial.
+
+\begin{itemize}
+    \item \textbf{Encoder Visual} $f_{enc}: \mathbb{R}^{H \times W \times C} \rightarrow \mathbb{R}^{d}$: Es una red neuronal convolucional (CNN) que procesa la imagen de entrada $\mathbf{I}$ (donde $H, W$ son las dimensiones espaciales y $C$ los canales de color) y la comprime a un vector latente $z$ de dimensión reducida.
+    \item \textbf{Decoder Visual} $f_{dec}: \mathbb{R}^{d} \rightarrow \mathbb{R}^{H \times W \times C}$: Una red de convoluciones transpuestas (o upsampling) que toma el vector abstracto $z$ y reconstruye una aproximación de la imagen original $\hat{\mathbf{I}}$.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.\textwidth]{licensed-image.jpg} 
+    \caption{\textbf{Arquitectura de un Autoencoder Convolucional.} A diferencia de un AE estándar, el Encoder utiliza capas convolucionales para reducir progresivamente las dimensiones espaciales ($H \times W$) mientras extrae características semánticas, colapsando la imagen en un vector latente $z$. El Decoder realiza la operación inversa mediante \textit{transposed convolutions} para recuperar la geometría original.}
+    \label{fig:conv_autoencoder}
+\end{figure}
+
+El entrenamiento minimiza la \textbf{pérdida de reconstrucción de imagen}:
+\begin{equation}
+\mathcal{L}_{AE} = \mathbb{E}_{\mathbf{I} \sim p_{data}} \left[ \|\mathbf{I} - f_{dec}(f_{enc}(\mathbf{I}))\|^2 \right]
+\end{equation}
+
+Esta ecuación encapsula el objetivo global del aprendizaje y se desglosa en los siguientes componentes:
+
+\begin{itemize}
+    \item \textbf{Flujo de Reconstrucción ($f_{dec}(f_{enc}(\mathbf{I}))$):} Representa el ciclo completo de la señal visual. La imagen $\mathbf{I}$ es transformada primero a una representación latente compacta y posteriormente proyectada de vuelta al espacio de píxeles, generando la aproximación $\hat{\mathbf{I}}$.
+    
+    \item \textbf{Término de Error ($\| \cdot \|^2$):} Utiliza la norma $L_2$ al cuadrado (Error Cuadrático Medio sobre píxeles) para cuantificar la discrepancia visual entre la imagen original y la reconstruida. Elevar al cuadrado penaliza fuertemente los errores grandes en regiones estructurales (bordes, contrastes fuertes).
+    
+    \item \textbf{Esperanza Matemática ($\mathbb{E}_{\mathbf{I} \sim p_{data}}$):} Indica que la optimización busca minimizar el error promedio sobre la distribución de imágenes naturales $p_{data}$, garantizando que el modelo generalice a nuevas imágenes visuales en lugar de memorizar el set de entrenamiento.
+\end{itemize}
+
+En esencia, minimizar $\mathcal{L}_{AE}$ obliga al modelo a aprender una compresión eficiente que preserve la máxima información visual necesaria para recuperar la entrada original.
+
+El bottleneck $z$ fuerza al modelo a aprender representaciones comprimidas. Sin embargo, los AE visuales simples presentan dos limitaciones críticas para la generación de imágenes de alta fidelidad:
+\begin{enumerate}
+    \item \textbf{Pérdida de detalles espaciales:} Debido al submuestreo (pooling/strides), el cuello de botella tiende a descartar información de alta frecuencia (texturas finas, pestañas, bordes nítidos) en favor de la estructura global.
+    \item \textbf{No son modelos generativos robustos:} No modelan explícitamente la distribución de probabilidad de las imágenes $p(\mathbf{I})$, lo que dificulta generar imágenes nuevas y coherentes mediante muestreo aleatorio.
+\end{enumerate} 
+
+\subsubsection{Representación Semántica: Embeddings}
+
+Antes de abordar modelos complejos como CLIP, es necesario definir cómo las máquinas interpretan el significado. Un \textit{embedding} es una representación vectorial continua de una variable discreta (como una palabra o una imagen).
+A diferencia de representaciones "one-hot" las cuales modelan una variable discreta $x$ perteneciente a un vocabulario $V$ de tamaño $|V|$ como un vector $v \in \{0,1\}^{|V|}$. Si $x$ corresponde al índice $i$, entonces $v_i = 1$ y $v_j = 0$ para todo $j \neq i$.
+La principal limitación de este enfoque en el modelado semántico es la \textbf{ortogonalidad}: para cualesquiera dos palabras distintas $A$ y $B$, su producto escalar es $A \cdot B = 0$, lo que impide capturar relaciones de similitud intrínsecas antes del entrenamiento, los embeddings mapean entradas a un espacio vectorial denso $\mathbb{R}^d$ donde la distancia geométrica equivale a similitud semántica.
+\begin{equation}
+    \text{sim}(A, B) = \cos(\theta) = \frac{A \cdot B}{\|A\| \|B\|}
+\end{equation}
+En este proyecto, nuestro objetivo es mapear la señal biológica del cerebro a este mismo espacio matemático, permitiendo operar algebraicamente con conceptos visuales.
+
+\subsubsection{U-Net: Skip Connections para Preservación de Información Espacial:}
+En arquitecturas profundas, la información de alta frecuencia como detalles finos y bordes suelen perderse en el cuello de botella (bottleneck).
+La innovación de la U-Net consiste en concatenar los mapas de características del Encoder directamente con las capas correspondientes del Decoder.
+
+Dado que el modelo de difusión debe limpiar ruido para revelar una imagen, necesita preservar la estructura espacial exacta. Las \textit{Skip Connections} permiten que el decodificador "vea" los detalles finos extraídos en las primeras capas, facilitando una reconstrucción nítida sin tener que recrear la geometría desde cero a partir de un vector comprimido.
+
+La \textbf{U-Net}, propuesta originalmente para segmentación médica, resuelve la primera limitación mediante \textbf{conexiones de salto (skip connections)}. La arquitectura tiene forma de "U":
+\begin{itemize}
+    \item \textbf{Encoder (rama descendente):} Serie de bloques [Conv + Activación + Pooling] que reducen dimensión espacial $(H, W) \rightarrow (H/2, W/2) \rightarrow \ldots \rightarrow (H/2^L, W/2^L)$ mientras aumentan canales.
+    \item \textbf{Bottleneck:} Capa de menor resolución espacial pero mayor dimensión de canal, captura contexto global.
+    \item \textbf{Decoder (rama ascendente):} Serie de bloques [Upsampling/Conv Transpuesta + Conv + Activación] que restauran resolución espacial \cite{14}.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{U-Net.png} 
+    \caption{\textbf{Arquitectura U-Net para Denoising.} Estructura completa de la red mostrando la contracción (Encoder) y expansión (Decoder). Se destacan las conexiones de salto (flechas horizontales) que transfieren el contexto espacial crítico para el proceso de difusión.}
+    \label{fig:unet_full}
+\end{figure}
+
+\paragraph{Fundamento Matemático de las Skip Connections:} La innovación clave es concatenar los mapas de características del encoder directamente con las capas correspondientes del decoder. Formalmente, sea $\mathbf{h}_{enc}^{(l)}$ el output del encoder en el nivel $l$ (antes del pooling), y $\mathbf{h}_{dec}^{(L-l)}$ el output del decoder en el nivel simétrico \cite{14}. La operación de concatenación es:
+\begin{equation}
+\mathbf{h}_{dec}^{(L-l)} = \sigma\left(\mathbf{W}^{(L-l)} \left[\text{Upsample}(\mathbf{h}_{dec}^{(L-l+1)}), \mathbf{h}_{enc}^{(l)}\right] + \mathbf{b}^{(L-l)}\right)
+\end{equation}
+donde $[\cdot, \cdot]$ denota concatenación a lo largo del eje de canales.
+
+\paragraph{Redes Residuales (ResNets):}
+El concepto de \textit{Skip Connection} utilizado en esta arquitectura tiene sus raíces en las Redes Neuronales Residuales (ResNets). A medida que las redes aumentan en profundidad, surge el problema de degradación, donde la precisión se satura y luego disminuye rápidamente.
+
+Para solucionar esto, las ResNets introducen el "aprendizaje residual". En lugar de intentar aprender una función directa $H(x)$, la red aprende una función residual $\mathcal{F}(x)$. Un bloque residual se define matemáticamente como:
+
+\begin{equation}
+    y = \mathcal{F}(x, \{W_i\}) + x
+\end{equation}
+
+donde: $x$ es la entrada al bloque.
+     $y$ es la salida del bloque.
+     $\mathcal{F}(x, \{W_i\})$ es el mapeo residual que la red debe aprender.
+     La operación $+ x$ se realiza mediante una conexión de atajo (\textit{shortcut connection}) que realiza un mapeo de identidad.
+
+Esta formulación permite que, si la función identidad fuera óptima, los pesos de la capa no lineal simplemente tenderían a cero, facilitando enormemente la optimización.
+
+\paragraph{Justificación Teórica de las Skip Connections:}
+\begin{enumerate}
+    \item \textbf{Preservación de información de alta frecuencia:} Las capas tempranas del encoder capturan detalles espaciales finos (bordes, texturas) antes de que el downsampling los descarte. Las skip connections "inyectan" estos detalles directamente en el decoder, permitiéndole generar salidas nítidas sin tener que "adivinar" desde el bottleneck.
+    
+    \item \textbf{Mitigación del problema de gradiente desvaneciente:} Las skip connections proporcionan caminos directos para el flujo de gradientes desde la salida hasta las capas tempranas durante backpropagation, similar a ResNets. Esto estabiliza el entrenamiento de redes muy profundas.
+    
+    \item \textbf{Fusión multi-escala:} Las skip connections permiten que el decoder acceda simultáneamente a:
+    \begin{itemize}
+        \item Información semántica de alto nivel (desde el bottleneck): "qué" hay en la imagen.
+        \item Información espacial de bajo nivel (desde encoder temprano): "dónde" están los objetos con precisión de píxel.
+    \end{itemize}
+    Esta fusión es esencial para tareas que requieren tanto comprensión semántica como precisión espacial.
+\end{enumerate}
+
+\paragraph{Conexión con el Módulo 2 (LDM):}
+En los Modelos de Difusión Latente las skip connections son críticas porque:
+\begin{itemize}
+    \item En cada paso de denoising, la U-Net debe predecir ruido fino (alta frecuencia) que debe substraerse de la imagen ruidosa actual.
+    \item Sin skip connections, la U-Net solo tendría información del bottleneck (bajo resolución), dificultando la predicción de estructuras espaciales finas.
+    \item Con skip connections, la U-Net puede "ver" la estructura espacial de la imagen ruidosa en múltiples escalas, permitiendo denoising preciso.
+\end{itemize}
+
+\subsection{Evolución del Alineador Semántico: Del ML a CLIP}
+
+El generador (U-Net) necesita un vector $z$ que no solo sea una representación comprimida, sino que capture el \textit{significado semántico} del contenido visual. Nuestro Módulo 1 (Encoder fMRI $\rightarrow$ CLIP) debe mapear señales cerebrales a este espacio semántico. Para entender por qué CLIP es la elección óptima, trazamos la evolución de las representaciones semánticas.
+\subsubsection{Transformers y el Mecanismo de Atención}
+
+Los \textbf{Transformers} superaron esta limitación mediante \textbf{embeddings contextuales}: la representación de una palabra depende de todas las demás palabras en la secuencia. El mecanismo central es la \textbf{auto-atención (self-attention) \cite{15}}.
+\paragraph{Derivación Matemática Detallada de Auto-Atención:}
+Dada una secuencia de embeddings de entrada $\mathbf{X} = [\mathbf{x}_1, \ldots, \mathbf{x}_n] \in \mathbb{R}^{n \times d_{\text{model}}}$, se proyecta linealmente a tres espacios:
+
+\begin{itemize}
+    \item \textbf{Query (Consulta):} $\mathbf{Q} = \mathbf{X} \mathbf{W}_Q$, donde $\mathbf{W}_Q \in \mathbb{R}^{d_{\text{model}} \times d_k}$. Cada fila $\mathbf{q}_i$ representa "qué información busca" el token $i$.
+    \item \textbf{Key (Clave):} $\mathbf{K} = \mathbf{X} \mathbf{W}_K$, donde $\mathbf{W}_K \in \mathbb{R}^{d_{\text{model}} \times d_k}$. Cada fila $\mathbf{k}_j$ representa "qué información posee" el token $j$.
+    \item \textbf{Value (Valor):} $\mathbf{V} = \mathbf{X} \mathbf{W}_V$, donde $\mathbf{W}_V \in \mathbb{R}^{d_{\text{model}} \times d_v}$. Cada fila $\mathbf{v}_j$ es el contenido informativo del token $j$.
+\end{itemize}
+
+\paragraph{Cálculo de Attention Scores:}
+La relevancia del token $j$ para el token $i$ se mide mediante el producto punto entre query y key:
+\begin{equation}
+e_{ij} = \mathbf{q}_i^T \mathbf{k}_j = \frac{\mathbf{q}_i \cdot \mathbf{k}_j}{\|\mathbf{q}_i\| \|\mathbf{k}_j\|} \|\mathbf{q}_i\| \|\mathbf{k}_j\|
+\end{equation}
+
+El producto punto captura similitud: valores altos indican que $\mathbf{k}_j$ "responde" a la consulta $\mathbf{q}_i$. Para estabilizar gradientes, se escala por $\sqrt{d_k}$:
+\begin{equation}
+\alpha_{ij} = \text{softmax}_j\left(\frac{e_{ij}}{\sqrt{d_k}}\right) = \frac{\exp(e_{ij}/\sqrt{d_k})}{\sum_{j'=1}^{n} \exp(e_{ij'}/\sqrt{d_k})}
+\end{equation}
+
+La softmax convierte scores en una distribución de probabilidad: $\sum_{j=1}^{n} \alpha_{ij} = 1$.
+
+\paragraph{Agregación Ponderada:}
+El output para el token $i$ es una suma ponderada de los valores:
+\begin{equation}
+\mathbf{z}_i = \sum_{j=1}^{n} \alpha_{ij} \mathbf{v}_j
+\end{equation}
+
+En forma matricial, todo el proceso se compacta como:
+\begin{equation}
+\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q} \mathbf{K}^T}{\sqrt{d_k}}\right) \mathbf{V}
+\end{equation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{MHA.png} 
+    \caption{\textbf{Mecanismo de Scaled Dot-Product Attention.} Representación gráfica del flujo de tensores descrito en las ecuaciones (15) a (18). Las matrices \textit{Query} ($Q$) y \textit{Key} ($K$) interactúan mediante un producto matricial para calcular la similitud. Tras el escalado y la aplicación de la función Softmax, se obtienen los pesos de atención que ponderan la matriz \textit{Value} ($V$), resultando en una representación contextualizada.}
+    \label{fig:attention_mechanism}
+\end{figure}
+
+\paragraph{Multi-Head Attention \cite{15}:}
+Para capturar múltiples tipos de relaciones (sintácticas, semánticas, posicionales) simultáneamente, se computan $h$ attention heads en paralelo con proyecciones distintas $\{\mathbf{W}_Q^{(i)}, \mathbf{W}_K^{(i)}, \mathbf{W}_V^{(i)}\}_{i=1}^{h}$:
+\begin{equation}
+\text{head}_i = \text{Attention}(\mathbf{X} \mathbf{W}_Q^{(i)}, \mathbf{X} \mathbf{W}_K^{(i)}, \mathbf{X} \mathbf{W}_V^{(i)})
+\end{equation}
+
+Los outputs se concatenan y proyectan linealmente:
+\begin{equation}
+\text{MultiHead}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h) \mathbf{W}_O
+\end{equation}
+donde $\mathbf{W}_O \in \mathbb{R}^{h d_v \times d_{\text{model}}}$.Esta Multi-head attention permite que diferentes heads se especialicen:
+ Un head puede focalizarse en relaciones sintácticas (sujeto-verbo).
+     Otro head puede capturar co-ocurrencias semánticas.
+     Otro puede codificar información posicional.
+
+Esta multiplicidad mejora expresividad sin incrementar excesivamente parámetros (se reduce la dimensión por head: $d_k = d_{\text{model}}/h$).
+
+\paragraph{Cross-Attention:\cite{15}} 
+Una variante crucial para nuestra arquitectura es la \textbf{atención cruzada (cross-attention)}, usada en el Módulo 2 para condicionar el LDM. Aquí, $\mathbf{Q}$ proviene de una secuencia (e.g., features del decoder de la U-Net), mientras $\mathbf{K}$ y $\mathbf{V}$ provienen de otra secuencia (e.g., embedding CLIP derivado de fMRI):
+\begin{equation}
+\text{CrossAttention}(\mathbf{Q}_{\text{decoder}}, \mathbf{K}_{\text{CLIP}}, \mathbf{V}_{\text{CLIP}}) = \text{softmax}\left(\frac{\mathbf{Q}_{\text{decoder}} \mathbf{K}_{\text{CLIP}}^T}{\sqrt{d_k}}\right) \mathbf{V}_{\text{CLIP}}
+\end{equation}
+
+Esto permite que el decoder "consulte" la información semántica de fMRI en cada paso de generación, modulando el proceso de denoising para producir imágenes coherentes con la señal cerebral.
+
+\subsubsection{CLIP: Aprendizaje Contrastivo Multimodal}
+
+\textbf{Contrastive Language-Image Pre-training (CLIP)} \cite{15} representa un avance fundamental en el aprendizaje de representaciones: construye un espacio de embeddings compartido entre imágenes y texto mediante aprendizaje contrastivo sobre 400 millones de pares. Este espacio es el cimiento de nuestra arquitectura de decodificación.
+
+\paragraph{Arquitectura de CLIP:}
+El modelo utiliza dos encoders paralelos que proyectan información a un espacio latente común $\mathbb{R}^{d_{\text{CLIP}}}$ , donde $d_{\text{CLIP}}$ es típicamente 768 debido a un estándar de facto en la arquitectura de Transformers por razones de diseño matemático y eficiencia de hardware:
+\begin{itemize}
+    \item \textbf{Image Encoder} $E_I$: Generalmente un Vision Transformer (ViT). 
+    Transforma la imagen $I$ en un vector $z_I = E_I(I)$.
+    \item \textbf{Text Encoder} $E_T$: Un Transformer que procesa la descripción textual $T$ para generar $z_T = E_T(T)$.
+\end{itemize}
+Un paso crítico es que ambos vectores se normalizan a norma unitaria ($z \leftarrow z / \|z\|$), proyectando todos los datos sobre una superficie esférica.
+
+\paragraph{Objetivo de Entrenamiento: Pérdida Contrastiva:}
+A diferencia de los clasificadores tradicionales, CLIP aprende mediante comparación. Dado un lote de $N$ pares $(I_i, T_i)$, construye una matriz de similitud de $N \times N$ basada en el producto punto (similitud coseno):
+\begin{equation}
+\mathbf{S}_{ij} = z_{I,i}^T z_{T,j}
+\end{equation}
+
+La función de pérdida simétrica (Cross-Entropy sobre filas y columnas) maximiza la similitud de los $N$ pares correctos (la diagonal) y minimiza la de los $N^2 - N$ pares incorrectos:
+\begin{equation}
+\mathcal{L}_{\text{CLIP}} = \frac{1}{2N} \sum_{i=1}^{N} \left( -\log \frac{e^{\mathbf{S}_{ii}/\tau}}{\sum_j e^{\mathbf{S}_{ij}/\tau}} - \log \frac{e^{\mathbf{S}_{ii}/\tau}}{\sum_i e^{\mathbf{S}_{ij}/\tau}} \right)
+\end{equation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{PerdidaContrastiva.png}
+    \caption{\textbf{Matriz de Similitud y Aprendizaje Contrastivo.} Representación de un lote de entrenamiento con $N$ pares imagen-texto. La cuadrícula representa la matriz de similitudes $N \times N$ calculada mediante el producto punto. Se busca maximizar los valores a lo largo de la diagonal principal y minimizar simultáneamente todos los valores fuera de la diagonal.}
+    \label{fig:clip_loss}
+\end{figure}
+
+\paragraph{Interpretación Geométrica Fundamental:}
+La verdadera potencia de CLIP radica en la geometría que induce esta pérdida. Al normalizar los embeddings, todos los conceptos se sitúan sobre una \textbf{hiperesfera unitaria}. El entrenamiento fuerza a que el vector de una imagen y el vector de su descripción textual apunten en la misma dirección (ángulo $\approx 0$), mientras aleja angularmente cualquier concepto no relacionado.
+Esto crea un mapa semántico continuo donde la \textbf{proximidad geométrica equivale a similitud semántica}. Para nuestro decodificador cerebral, esto es vital, pues significa que si nuestro modelo predice un vector "cercano" al real, la imagen generada será semánticamente coherente, aunque no sea idéntica píxel a píxel.
+
+\paragraph{Relevancia para el Módulo 1 (Codificador Cerebral):}
+Nuestro Codificador ($f_{enc}$) se entrena para mapear la señal fMRI $V$ directamente a este espacio geométrico organizado. Minimizamos la distancia euclidiana (o maximizamos la similitud coseno) entre la predicción y el embedding CLIP real de la imagen vista:
+\begin{equation}
+\mathcal{L}_{\text{Módulo 1}} = \mathbb{E}_{(V,I)} \left[ \|f_{enc}(V) - E_I(I)\|^2 \right]
+\end{equation}
+Al hacer esto, no estamos simplemente regresionando números, estamos enseñando a la red neuronal a "navegar" hacia las coordenadas semánticas correctas dentro de la hiperesfera de CLIP usando la actividad cerebral como brújula \cite{15}.
+
+
+\subsection{Modelos de Difusión Latente (LDM)}
+
+El núcleo generativo del proyecto se basa en Modelos Probabilísticos de Difusión (DDPM). La intuición física es revertir un proceso de termodinámica: si destruir una imagen añadiendo ruido es fácil, aprender a revertir ese proceso nos permite generar imágenes desde ruido puro \cite{15}.
+
+\paragraph{Proceso de Forward (Difusión):}
+Se modela como una Cadena de Markov fija que añade ruido gaussiano progresivamente a los datos originales. Denotamos como $q(\cdot)$ a la distribución de probabilidad de este proceso de difusión como un proceso fijo, no parametrizado por pesos aprendibles. Partiendo de una imagen limpia $x_0$ muestreada de la distribución de datos real $q(x_0)$, la distribución de transición condicional para un paso $t$ dado el paso anterior $t-1$ se define como:
+
+\begin{equation}
+    q(x_t | x_{t-1}) = \mathcal{N}(x_t; \sqrt{1-\beta_t}x_{t-1}, \beta_t \mathbf{I})
+\end{equation}
+
+\noindent donde:
+\begin{itemize}
+    \item $x_t \in \mathbb{R}^{H \times W \times C}$ es la imagen latente en el paso de tiempo $t$.
+    \item $\beta_t \in (0, 1)$ es el \textit{variance schedule} (programación de varianza).
+    \item $\mathbf{I}$ es la matriz identidad.
+\end{itemize}
+
+Para facilitar la derivación matemática, definimos $\alpha_t = 1 - \beta_t$ y $\bar{\alpha}_t = \prod_{s=1}^t \alpha_s$.
+
+\paragraph{Derivación de la Propiedad de Muestreo Directo ($x_0 \rightarrow x_t$):}
+Una propiedad fundamental es que podemos muestrear $x_t$ directamente desde $x_0$ sin iterar $T$ veces. Usando la reparametrización con $\alpha_t$, expresamos un paso simple como:
+\begin{equation}
+    x_t = \sqrt{\alpha_t}x_{t-1} + \sqrt{1-\alpha_t}\epsilon_{t-1}, \quad \text{donde } \epsilon \sim \mathcal{N}(0, \mathbf{I})
+\end{equation}
+
+Si expandimos recursivamente sustituyendo $x_{t-1} = \sqrt{\alpha_{t-1}}x_{t-2} + \sqrt{1-\alpha_{t-1}}\epsilon_{t-2}$:
+
+\begin{equation}
+\begin{aligned}
+    x_t &= \sqrt{\alpha_t}(\sqrt{\alpha_{t-1}}x_{t-2} + \sqrt{1-\alpha_{t-1}}\epsilon_{t-2}) + \sqrt{1-\alpha_t}\epsilon_{t-1} \\
+    &= \sqrt{\alpha_t \alpha_{t-1}}x_{t-2} + \underbrace{\sqrt{\alpha_t(1-\alpha_{t-1})}\epsilon_{t-2} + \sqrt{1-\alpha_t}\epsilon_{t-1}}_{\text{Combinación lineal de Gaussianas}}
+\end{aligned}
+\end{equation}
+
+Para simplificar el término de ruido, aplicamos la \textbf{Propiedad de Aditividad de Gaussianas}: la suma de dos variables normales independientes $\mathcal{N}(0, \sigma_1^2) + \mathcal{N}(0, \sigma_2^2)$ equivale a una distribución $\mathcal{N}(0, \sigma_1^2 + \sigma_2^2)$. Calculamos la nueva varianza combinada:
+
+\begin{equation}
+\begin{aligned}
+    \sigma_{new}^2 &= (\sqrt{\alpha_t(1-\alpha_{t-1})})^2 + (\sqrt{1-\alpha_t})^2 \\
+    &= \alpha_t(1-\alpha_{t-1}) + (1-\alpha_t) \\
+    &= \alpha_t - \alpha_t\alpha_{t-1} + 1 - \alpha_t \\
+    &= 1 - \alpha_t\alpha_{t-1}
+\end{aligned}
+\end{equation}
+
+Esto demuestra que el coeficiente de ruido se convierte en $\sqrt{1 - \alpha_t\alpha_{t-1}}$. Al generalizar esta recursión hasta $x_0$, el producto de los $\alpha$ se acumula en $\bar{\alpha}_t$, resultando en la forma cerrada:
+
+\begin{equation}
+    q(x_t | x_0) = \mathcal{N}(x_t; \sqrt{\bar{\alpha}_t}x_0, (1 - \bar{\alpha}_t)\mathbf{I})
+\end{equation}
+
+Lo cual nos permite generar una muestra ruidosa arbitraria $x_t$ en un solo paso mediante:
+\begin{equation}
+    x_t = \sqrt{\bar{\alpha}_t}x_0 + \sqrt{1-\bar{\alpha}_t}\epsilon, \quad \epsilon \sim \mathcal{N}(0, \mathbf{I})
+\end{equation}
+
+\subsubsection{Conexión con la Arquitectura Propuesta: Módulo 2}
+
+El Módulo 2 de nuestra arquitectura utiliza un LDM pre-entrenado (e.g., Stable Diffusion) como base:
+\begin{itemize}
+    \item \textbf{Encoder VAE y Decoder VAE:} Se mantienen congelados. Ya están entrenados para comprimir y reconstruir imágenes naturales.
+    \item \textbf{U-Net de difusión:} Se mantiene congelado en su mayoría. Está pre-entrenado para denoising condicionado por text embeddings CLIP.
+    \item \textbf{Módulo de Cross-Attention:} Este es el punto de integración. En lugar de condicionar con text embeddings de CLIP, inyectamos el embedding predicho por nuestro Módulo 1 desde fMRI: $c = f_{enc}(V)$.
+\end{itemize}
+
+\paragraph{Justificación de Transfer Learning:}
+El LDM ya posee un "prior" visual masivo, aprendido de miles de millones de imágenes. No necesitamos re-entrenar este componente costoso. En su lugar:
+\begin{enumerate}
+    \item Entrenamos el Módulo 1 ($f_{enc}: V \rightarrow z_{\text{CLIP}}$) para que produzca embeddings similares a los embeddings CLIP verdaderos de las imágenes percibidas.
+    \item El Módulo 2 (LDM) interpreta estos embeddings como lo haría con cualquier conditioning CLIP, generando imágenes coherentes.
+\end{enumerate}
+
+Esta estrategia reduce dramáticamente los requisitos de datos y cómputo, aprovechando el conocimiento pre-aprendido del LDM. La clave es que el espacio CLIP actúa como un "puente universal" entre modalidades (texto, imagen, y ahora, actividad cerebral).
+
+\subsection{Teoría de Información en Decodificación Cerebral: Fundamento del Módulo 1}
+Para validar el diseño de la arquitectura fMRI $\rightarrow$ CLIP $\rightarrow$ LDM, recurrimos a la Teoría de Información. Este marco nos permite cuantificar límites teóricos de decodificación y justifica por qué un espacio semántico intermedio (CLIP) es superior a una regresión directa píxel a píxel.
+\subsubsection{Fundamentos de Información: Entropía y Desigualdad del Procesamiento de Datos}
+
+Para justificar teóricamente el diseño del codificador, es necesario definir primero qué entendemos por "información" en este contexto. Basándonos en la Teoría Matemática de la Comunicación de Shannon \cite{11}, la información se cuantifica no como significado semántico, sino como la resolución de incertidumbre.
+
+La medida fundamental de esta incertidumbre para una variable aleatoria (como la distribución de vóxeles $V$) es la \textbf{Entropía}, denotada como $H(V)$:
+\begin{equation}
+    H(V) = - \sum p(v) \log p(v)
+\end{equation}
+Minimizar esta entropía equivale a ganar conocimiento sobre el estado del sistema.
+
+Sobre esta base, la cantidad crítica que nuestro modelo busca maximizar es la \textbf{Información Mutua (MI)}, denotada como $I(V; I)$. Esta métrica cuantifica cuánta reducción de entropía (incertidumbre) sobre la imagen $I$ se obtiene al observar la actividad cerebral $V$ \cite{12}:
+\begin{equation}
+    I(V; I) = H(I) - H(I|V)
+\end{equation}
+Donde $H(I|V)$ representa la entropía condicional o la "incertidumbre restante" de la imagen una vez conocida la señal biológica.
+
+El principio rector para nuestro \textit{Encoder} (Módulo 1) es la \textbf{Desigualdad del Procesamiento de Datos} (Data Processing Inequality). Este teorema establece que ningún post-procesamiento determinista puede crear nueva información que no existiera en la señal original \cite{12}:
+\begin{equation}
+    I(V; I) \geq I(f_{enc}(V); I)
+\end{equation}
+
+\textbf{Implicación en el diseño:} Dado que la señal fMRI es ruidosa y limitada, el objetivo del Módulo 1 no es "inventar" detalles visuales, sino \textbf{preservar} la máxima cantidad de información mutua contenida en $V$ al transformarla al espacio latente $z$, asegurando que la compresión sea eficiente y semánticamente fiel.
+
+\subsubsection{Información Mutua y Desigualdad del Procesamiento de Datos}
+
+La cantidad fundamental que buscamos maximizar es la \textbf{Información Mutua (MI)} entre la actividad cerebral $V$ y la imagen visualizada $I$, denotada como $I(V; I)$. Esta métrica cuantifica la reducción de incertidumbre sobre la imagen $I$ al observar la señal cerebral $V$:
+\begin{equation}
+    I(V; I) = H(I) - H(I|V)
+\end{equation}
+Donde $H(I|V)$ representa la entropía condicional o la "incertidumbre restante".
+
+El principio rector para nuestro \textit{Encoder} (Módulo 1) es la \textbf{Desigualdad del Procesamiento de Datos}. Esta establece que ningún post-procesamiento determinista puede incrementar la información contenida originalmente en la señal biológica:
+\begin{equation}
+    I(V; I) \geq I(f_{enc}(V); I)
+\end{equation}
+\textbf{Implicación en el diseño:} Dado que la señal fMRI es ruidosa y limitada, el objetivo del Módulo 1 no es "crear" detalles visuales, sino \textbf{preservar} la máxima cantidad de información semántica contenida en $V$ al transformarla al espacio latente $z$.
+
+\subsubsection{El Principio del Cuello de Botella de Información (Information Bottleneck)}
+
+¿Cómo debe ser la representación latente $z$? Aplicamos el principio del \textit{Information Bottleneck} (IB), que busca una representación comprimida $T$ (en nuestro caso, el embedding predicho) que satisfaga dos objetivos opuestos:
+\begin{equation}
+    \min \mathcal{L}_{IB} = \underbrace{I(V; z)}_{\text{Compresión}} - \beta \underbrace{I(z; I)}_{\text{Relevancia}}
+\end{equation}
+
+\begin{enumerate}
+    \item \textbf{Compresión (Minimizar $I(V; z)$):} El encoder debe descartar la información de $V$ que no es relevante para la imagen (ruido fisiológico, respiración, movimiento).
+    \item \textbf{Relevancia (Maximizar $I(z; I)$):} El encoder debe retener toda la información necesaria para identificar la imagen $I$.
+\end{enumerate}
+
+Este trade-off justifica el uso de un espacio latente de menor dimensión (como el de CLIP, 768-d) en lugar de trabajar con decenas de miles de vóxeles ruidosos.
+
+\subsubsection{Justificación Teórica de CLIP como Espacio Óptimo}
+
+La decisión crítica de este proyecto es utilizar el espacio de CLIP como intermediario. La teoría de información respalda esto por tres razones:
+
+\begin{itemize}
+    \item \textbf{Alineación Semántica:} El entrenamiento de CLIP maximiza explícitamente $I(\text{Imagen}; \text{Texto})$. Dado que el cerebro procesa información visual extrayendo semántica (categorías, objetos) más que detalles de píxeles exactos, el espacio CLIP es un \textit{proxy} natural de la representación cortical de alto nivel.
+    
+    \item \textbf{Eficiencia Rate-Distortion:} La Teoría de Rate-Distortion establece que con un canal de capacidad limitada (fMRI), es imposible reconstruir la señal perfecta. Sin embargo, al apuntar al espacio CLIP, optimizamos la reconstrucción perceptual en lugar de la métrica píxel a píxel (MSE), permitiendo que el Modelo de Difusión (Módulo 2) "alucine" los detalles de alta frecuencia coherentes con la semántica decodificada.
+    
+    \item \textbf{Universalidad:} Al forzar $f_{enc}(V) \approx z_{CLIP}$, aprovechamos un espacio que ya es invariante a cambios de iluminación o pose irrelevantes, facilitando que el modelo de difusión genere imágenes plausibles incluso si la señal cerebral es incompleta.
+\end{itemize}
+
+% METODOLOGÍA 
+\section{Metodología}
+
+\subsection{Tipo y Diseño de Investigación}
+\begin{itemize}
+    \item \textbf{Diseño Experimental:} Se manipulan variables independientes como la arquitectura del modelo e hiperparámetros para observar su efecto sobre la variable dependiente la cual viene a ser la calidad de la imagen reconstruida.
+    \item \textbf{Simulación de Computadora:} Se utilizan modelos matemáticos y vectoriales (espacios latentes) para replicar el proceso de decodificación visual humana mediante software.
+\end{itemize}
+
+\subsection{Población y Muestra}
+\begin{itemize}
+    \item \textbf{Población:} El conjunto de patrones de actividad neuronal humana (señal BOLD) generados en respuesta a estímulos visuales naturales[cite: 166].
+    \item \textbf{Muestra:} Se aplica un **muestreo no probabilístico por conveniencia**, seleccionando dos datasets públicos validados de alta resolución (7 Tesla):
+    \begin{enumerate}
+        \item \textit{Natural Scenes Dataset (NSD):} 73,000 imágenes COCO con registros fMRI.
+        \item \textit{BOLD5000:} ~5,000 imágenes de escenas complejas.
+    \end{enumerate}
+\end{itemize}
+
+\subsection{Técnicas e Instrumentos de Recolección y Análisis}
+Se utilizan Fuentes Secundarias procesadas mediante algoritmos de Aprendizaje Profundo. El procedimiento se divide en dos módulos interconectados:
+
+\subsubsection{Fase 1: Codificación Cerebral (Módulo 1)}
+Se extraen y normalizan (z-score) los vóxeles de las Regiones de Interés (V1, V2, V3).
+\begin{itemize}
+    \item \textbf{Instrumento:} Un \textbf{Perceptrón Multicapa (MLP)} ($f_{enc}$) diseñado para traducir la señal biológica $V$ al espacio latente de CLIP ($z_{pred}$).
+    \item \textbf{Validación:} Minimización del Error Cuadrático Medio (MSE) respecto al vector real $z_I$ de la imagen original (ground truth).
+\end{itemize}
+
+\subsubsection{Fase 2: Decodificación Generativa (Módulo 2)}
+Se utiliza la proyección latente obtenida en la fase anterior para sintetizar la imagen visual.
+\begin{itemize}
+    \item \textbf{Instrumento:} Un \textbf{Latent Diffusion Model (LDM)} pre-entrenado y congelado (ej. Stable Diffusion).
+    \item \textbf{Procedimiento:} El vector $z_{pred}$ se inyecta mediante mecanismos de \textbf{Cross-Attention} en la arquitectura U-Net del modelo. Durante la inferencia, el sistema realiza un proceso iterativo de \textit{denoising} condicionado para transformar ruido aleatorio en la imagen final $I_{decoded}$.
+\end{itemize}
+
+
+\section*{Bibliografía}
+\begin{thebibliography}{15}
+    \small 
+
+    \bibitem{1} Aduen, J., et al. (2025). "Hierarchical Generative Models for Decoding Naturalistic Visual Scenes from fMRI". \textit{bioRxiv 2025.01.10.575123}.
+
+    \bibitem{2} Allen, E.J., et al. (2021). "A massive 7T fMRI dataset to bridge cognitive neuroscience and artificial intelligence". \textit{Nature Neuroscience, 24}(6), 801-811.
+
+    \bibitem{3} Bogdan, P. C., Wu, Y., Fan, J., Chang, L. J., Manning, J. R., \& Norman, K. A. (2024). Large Language Models Reveal how the Brain Encodes Relational Information. \textit{bioRxiv}.
+
+    \bibitem{4} Li, S., et al. (2024). Core decoding algorithms for multi-modal BCIs enabled by AI. \textit{arXiv preprint arXiv:2402.02830}.
+
+    \bibitem{5} Lin, Z., et al. (2024). "Brain-Diffuser: A Framework for High-Fidelity Image Reconstruction from Brain Activity". \textit{arXiv preprint arXiv:2403.04183}.
+
+    \bibitem{6} Ozcelik, F., \& VanRullen, R. (2024). "Brain-Supervised Image-to-Image Translation". \textit{arXiv preprint arXiv:2404.09741}.
+
+    \bibitem{7} Puah, J. H., Tan, K. Y., Ang, K. K., \& Wang, C. (2024). NECOMIMI: Neural-Enhanced COMpression and MultI-Modal Imagination framework for EEG-based image generation. \textit{bioRxiv}.
+
+    \bibitem{8} Radford, A., et al. (2021). "Learning transferable visual models from natural language supervision". In \textit{Proceedings of the 38th International Conference on Machine Learning (ICML)}.
+
+    \bibitem{9} Rombach, R., et al. (2022). "High-resolution image synthesis with latent diffusion models". In \textit{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}.
+
+    \bibitem{10} Scotti, P. S., Go, C., \& Ivry, R. B. (2024). Brain-inspired generative models for visual reconstructions. \textit{bioRxiv}.
+
+    \bibitem{11} Shannon, C. E. (1948). A Mathematical Theory of Communication. The Bell System Technical Journal, 27(3), 379–423.
+    
+    \bibitem{12} Cover, T. M., \& Thomas, J. A. (2006). Elements of Information Theory (2nd ed.). Wiley-Interscience.
+
+    \bibitem{13} Takagi, Y., \& Nishimoto, S. (2023). "High-resolution image reconstruction with latent diffusion models from human brain activity". In \textit{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}.
+    
+    \bibitem{14} Prince, S. J. D. (2023). \textit{Understanding Deep Learning}. MIT Press.
+    
+    \bibitem{15} Murphy, K. P. (2023). \textit{Probabilistic Machine Learning: Advanced Topics}. MIT Press.
+
+\end{thebibliography}
+
+% --- FIN DEL DOCUMENTO ---
+\end{document}
