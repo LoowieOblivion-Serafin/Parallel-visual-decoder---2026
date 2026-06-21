@@ -39,7 +39,9 @@ logging.basicConfig(
 log = logging.getLogger("evaluation")
 
 try:
+    # pyrefly: ignore [missing-import]
     from skimage.metrics import structural_similarity as _ssim
+    # pyrefly: ignore [missing-import]
     from skimage.metrics import peak_signal_noise_ratio as _psnr
     HAS_SKIMAGE = True
 except ImportError:
@@ -47,6 +49,7 @@ except ImportError:
     log.warning("scikit-image no instalado; SSIM/PSNR se omitirán.")
 
 try:
+    # pyrefly: ignore [missing-import]
     from scipy.stats import pearsonr as _pearsonr
     HAS_SCIPY = True
 except ImportError:
@@ -54,6 +57,7 @@ except ImportError:
     log.warning("scipy no instalado; PixCorr se omitirá.")
 
 try:
+    # pyrefly: ignore [missing-import]
     import torch
     HAS_TORCH = True
 except ImportError:
@@ -61,6 +65,7 @@ except ImportError:
     log.error("PyTorch no instalado. CLIP/LPIPS no disponibles.")
 
 try:
+    # pyrefly: ignore [missing-import]
     import lpips as _lpips_lib
     HAS_LPIPS = True
 except ImportError:
@@ -69,6 +74,7 @@ except ImportError:
 HAS_CLIP = False
 if HAS_TORCH:
     try:
+        # pyrefly: ignore [missing-import]
         from transformers import CLIPModel, CLIPProcessor
         HAS_CLIP = True
     except ImportError:

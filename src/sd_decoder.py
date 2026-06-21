@@ -164,36 +164,67 @@ def reconstruct_from_embedding(
     Returns:
         PIL.Image.Image
     """
+    is_single_input = False
     if brain_clip_embedding.dim() == 1:
         brain_clip_embedding = brain_clip_embedding.unsqueeze(0)
+        is_single_input = True
+    elif brain_clip_embedding.dim() == 2 and brain_clip_embedding.shape[0] == 1:
+        is_single_input = True
+
     if brain_clip_embedding.dim() != 2 or brain_clip_embedding.shape[1] != 768:
         raise ValueError(
-            f"brain_clip_embedding debe tener shape (1, 768) o (768,); "
+            f"brain_clip_embedding debe tener shape (B, 768), (1, 768) o (768,); "
             f"recibido: {tuple(brain_clip_embedding.shape)}"
         )
 
+    batch_size = brain_clip_embedding.shape[0]
     device = pipeline.unet.device
     target_dtype = pipeline.unet.dtype
     brain_clip_embedding = brain_clip_embedding.to(device=device, dtype=target_dtype)
 
-    generator = None
+    # Si prompt es un string, lo duplicamos para que coincida con el tamaño del lote.
+    # Si ya es una lista, nos aseguramos de que coincida con el tamaño del lote.
+    if isinstance(prompt, str):
+        prompts = [prompt] * batch_size
+    else:
+        prompts = prompt
+        if len(prompts) != batch_size:
+            raise ValueError(f"La longitud de prompts ({len(prompts)}) no coincide con el batch_size ({batch_size})")
+
+    if isinstance(negative_prompt, str):
+        negative_prompts = [negative_prompt] * batch_size
+    else:
+        negative_prompts = negative_prompt
+        if len(negative_prompts) != batch_size:
+            raise ValueError(f"La longitud de negative_prompts ({len(negative_prompts)}) no coincide con el batch_size ({batch_size})")
+
+    # Generamos semillas deterministas por-elemento en el lote
+    generators = None
     if seed is not None:
-        generator = torch.Generator(device=device).manual_seed(int(seed))
+        if batch_size == 1:
+            generators = torch.Generator(device=device).manual_seed(int(seed))
+        else:
+            generators = [
+                torch.Generator(device=device).manual_seed(int(seed) + i)
+                for i in range(batch_size)
+            ]
 
     with torch.no_grad():
         result = pipeline(
-            prompt=prompt,
+            prompt=prompts,
             image_embeds=brain_clip_embedding,
-            negative_prompt=negative_prompt,
+            negative_prompt=negative_prompts,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             noise_level=noise_level,
-            generator=generator,
+            generator=generators,
             height=output_height,
             width=output_width,
         )
 
-    return result.images[0]
+    if is_single_input:
+        return result.images[0]
+    return result.images
 
 
 # ============================================================================
