@@ -342,11 +342,11 @@ def main(subjects: Iterable[str],
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluación SD 2.1 unCLIP sobre NSD")
     parser.add_argument("--subjects", nargs="+",
-                        default=config.NSD_CONFIG["subjects"])
+                        default=list(config.BOLD5000_CONFIG["subjects"]))
     parser.add_argument("--recon-dir", type=Path,
                         default=config.DATA_DIRS["output"])
     parser.add_argument("--gt-dir", type=Path,
-                        default=config.NSD_CONFIG["stimuli_root"])
+                        default=config.BOLD5000_CONFIG["stimuli_images"])
     return parser.parse_args()
 
 

@@ -57,6 +57,7 @@ import logging
 import math
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import matplotlib
@@ -158,8 +159,16 @@ def find_ground_truth(stimuli_root: Path, stem: str) -> Path | None:
 # ---------------------------------------------------------------------------
 
 def render_pair(gt_path: Path, recon: Image.Image, out_path: Path, stem: str, dpi: int) -> None:
+    # API orientada a objetos (Figure, no pyplot): pyplot mantiene estado global
+    # NO thread-safe. Como este render se ejecuta dentro del ThreadPoolExecutor
+    # (concurrente con la GPU), usamos Figure + FigureCanvasAgg aislados por hilo.
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
     gt = Image.open(gt_path).convert("RGB")
-    fig, axes = plt.subplots(1, 2, figsize=(8, 4.4))
+    fig = Figure(figsize=(8, 4.4))
+    FigureCanvasAgg(fig)
+    axes = fig.subplots(1, 2)
     axes[0].imshow(gt)
     axes[0].set_title("Estímulo Original", fontsize=11)
     axes[0].axis("off")
@@ -169,7 +178,6 @@ def render_pair(gt_path: Path, recon: Image.Image, out_path: Path, stem: str, dp
     fig.suptitle(stem, fontsize=9, y=0.02)
     fig.tight_layout()
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
 
 
 def render_grid(
@@ -234,6 +242,8 @@ def run_evaluation(
     dpi: int,
     grid_rows: int,
     use_cpu: bool,
+    batch_size: int = 2,
+    save_workers: int = 4,
     dry_run: bool = False,
 ) -> dict:
     trial_ids, embeds = load_adapter_embeddings(embeds_path)
@@ -275,54 +285,116 @@ def run_evaluation(
         logger.warning("DRY-RUN activo: SD 2.1 unCLIP NO se carga. Recon = PIL sintético.")
 
     ok = missing_gt = failed = 0
-    collage_items: list[tuple[str, Path, Path]] = []
+    # (orden, stem, gt_path, recon_path) — se ordena al final para grid determinista
+    collage_ordered: list[tuple[int, str, Path, Path]] = []
     t0 = time.perf_counter()
 
-    with torch.inference_mode():
-        for i, (stem, emb_row) in enumerate(zip(stems, embeds), 1):
-            recon_path = recon_dir / f"{stem}_recon.png"
+    def _postprocess(order: int, stem: str, recon_img: Image.Image, newly_generated: bool):
+        """Corre en hilos de CPU EN PARALELO con la GPU: guarda el PNG de la
+        reconstrucción, busca el ground-truth y renderiza el collage comparativo.
+        Devolver el `order` permite reordenar el grid de forma determinista."""
+        recon_path = recon_dir / f"{stem}_recon.png"
+        if newly_generated:
+            recon_img.save(recon_path)
+        gt_path = find_ground_truth(stimuli_root, stem)
+        if gt_path is not None:
             pair_path = pairs_dir / f"{stem}_compare.png"
-            gt_path = find_ground_truth(stimuli_root, stem)
+            render_pair(gt_path, recon_img, pair_path, stem, dpi=dpi)
+        return order, stem, gt_path, recon_path
 
-            try:
-                if recon_path.exists():
-                    recon_img = Image.open(recon_path).convert("RGB")
-                    logger.info(f"[{subject}] ({i}/{len(stems)}) {stem} — recon cacheado")
-                elif dry_run:
-                    recon_img = _dummy_recon_from_embed(emb_row, seed=seed + i)
-                    recon_img.save(recon_path)
-                else:
-                    prompt = sd_prior_prompts[i % len(sd_prior_prompts)]
-                    embed_t = emb_row.detach().to(device=device, dtype=pipeline.unet.dtype).unsqueeze(0)
-                    recon_img = reconstruct_from_embedding(
-                        pipeline,
-                        embed_t,
-                        prompt=prompt,
-                        num_inference_steps=num_inference_steps,
-                        guidance_scale=guidance_scale,
-                        noise_level=noise_level,
-                        seed=seed,
+    work = list(zip(stems, embeds))
+    n = len(work)
+    n_batches = math.ceil(n / batch_size) if n else 0
+    logger.info(
+        f"[{subject}] paralelizado: {n} imgs | batch_size={batch_size} | "
+        f"save_workers={save_workers} | {n_batches} lotes GPU"
+    )
+
+    futures = []
+    with ThreadPoolExecutor(max_workers=save_workers) as pool:
+        # torch.inference_mode envuelve SOLO la generación en GPU (hilo principal).
+        with torch.inference_mode():
+            for b in range(n_batches):
+                chunk = work[b * batch_size : (b + 1) * batch_size]
+                # Los que ya existen en disco se releen; solo se generan los faltantes.
+                gen_local = [
+                    k for k, (stem, _) in enumerate(chunk)
+                    if not (recon_dir / f"{stem}_recon.png").exists()
+                ]
+                recon_imgs: list[Image.Image | None] = [None] * len(chunk)
+
+                for k, (stem, _) in enumerate(chunk):
+                    if k not in gen_local:
+                        recon_imgs[k] = Image.open(recon_dir / f"{stem}_recon.png").convert("RGB")
+
+                # --- Generación en LOTE (paralelismo de datos en GPU / SIMD) ---
+                if gen_local:
+                    try:
+                        if dry_run:
+                            for k in gen_local:
+                                stem, emb = chunk[k]
+                                recon_imgs[k] = _dummy_recon_from_embed(
+                                    emb, seed=seed + b * batch_size + k
+                                )
+                        else:
+                            sub_embeds = torch.stack([chunk[k][1] for k in gen_local]).to(
+                                device=device, dtype=pipeline.unet.dtype
+                            )
+                            sub_prompts = [
+                                sd_prior_prompts[(b * batch_size + k) % len(sd_prior_prompts)]
+                                for k in gen_local
+                            ]
+                            imgs = reconstruct_from_embedding(
+                                pipeline,
+                                sub_embeds,
+                                prompt=sub_prompts,
+                                num_inference_steps=num_inference_steps,
+                                guidance_scale=guidance_scale,
+                                noise_level=noise_level,
+                                seed=seed,
+                            )
+                            if not isinstance(imgs, list):
+                                imgs = [imgs]
+                            for j, k in enumerate(gen_local):
+                                recon_imgs[k] = imgs[j]
+                            del sub_embeds
+                    except Exception as exc:
+                        failed += len(gen_local)
+                        bad = [chunk[k][0] for k in gen_local]
+                        logger.error(f"[{subject}] fallo en lote {b} {bad}: {exc}")
+
+                # --- Encolar post-proceso (I/O concurrente con la siguiente GPU) ---
+                for k, (stem, _) in enumerate(chunk):
+                    if recon_imgs[k] is None:
+                        continue  # la generación falló para este item
+                    order = b * batch_size + k
+                    futures.append(
+                        pool.submit(_postprocess, order, stem, recon_imgs[k], k in gen_local)
                     )
-                    recon_img.save(recon_path)
-                    del embed_t
 
+                # empty_cache cada ~empty_cache_every imágenes (traducido a lotes)
+                cadence = max(1, empty_cache_every // batch_size) if empty_cache_every > 0 else 0
+                if device.type == "cuda" and cadence and (b + 1) % cadence == 0:
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+        # Drenar el pool: la GPU ya terminó, recolectamos los resultados de I/O.
+        for fut in futures:
+            try:
+                order, stem, gt_path, recon_path = fut.result()
                 if gt_path is None:
                     missing_gt += 1
-                    logger.warning(f"[{subject}] ({i}/{len(stems)}) GT no hallado: {stem}")
+                    logger.warning(f"[{subject}] GT no hallado: {stem}")
                 else:
-                    render_pair(gt_path, recon_img, pair_path, stem, dpi=dpi)
-                    collage_items.append((stem, gt_path, recon_path))
+                    collage_ordered.append((order, stem, gt_path, recon_path))
                     ok += 1
-                    logger.info(f"[{subject}] ({i}/{len(stems)}) {stem} → {pair_path.name}")
-
             except Exception as exc:
                 failed += 1
-                logger.error(f"[{subject}] ({i}/{len(stems)}) fallo {stem}: {exc}")
+                logger.error(f"[{subject}] post-proceso falló: {exc}")
 
-            if device.type == "cuda" and empty_cache_every > 0 and i % empty_cache_every == 0:
-                torch.cuda.empty_cache()
-                gc.collect()
-
+    # Grid determinista: reordenar por índice original antes de renderizar.
+    collage_ordered.sort(key=lambda x: x[0])
+    collage_items = [(stem, gt, rc) for _, stem, gt, rc in collage_ordered]
     grid_path = subj_root / f"{subject}_grid.png"
     render_grid(collage_items, grid_path, max_rows=grid_rows, dpi=dpi)
 
@@ -372,6 +444,11 @@ def main() -> int:
                     help="Filas máximas en el grid agregado.")
     ap.add_argument("--empty-cache-every", type=int, default=4,
                     help="Cada N imágenes llama torch.cuda.empty_cache() (0 = off).")
+    ap.add_argument("--batch-size", type=int, default=2,
+                    help="Imágenes por lote GPU (paralelismo de datos). "
+                         "Default 2, seguro para RTX 4050 (6GB) con SD 2.1 unCLIP 768px bf16.")
+    ap.add_argument("--save-workers", type=int, default=4,
+                    help="Hilos de CPU para guardado/collage async concurrente con la GPU.")
     ap.add_argument("--cpu", action="store_true", help="Fuerza CPU (fp32, lento).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Skip SD pipeline load. Usa stub PIL (valida IO y shapes sin diffusers).")
@@ -405,6 +482,8 @@ def main() -> int:
         dpi=args.dpi,
         grid_rows=args.grid_rows,
         use_cpu=args.cpu,
+        batch_size=args.batch_size,
+        save_workers=args.save_workers,
         dry_run=args.dry_run,
     )
     return 0 if summary["failed"] == 0 else 1

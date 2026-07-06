@@ -69,8 +69,11 @@ def create_mock_ecosystem(root: Path, n: int, subject: str, seed: int) -> dict[s
     for i, fname in enumerate(filenames):
         _write_img(presented / "Scene" / fname, seed=seed + i)
 
-    # Lista de repeated (loader tolera != 113 con warning)
-    repeated_txt = presented / "repeated_stimuli_113_list.txt"
+    # Lista de repeated (loader tolera != 113 con warning).
+    # OJO: config.bold5000_repeated_list_txt() la busca en Scene_Stimuli/ (un nivel
+    # ARRIBA de Presented_Stimuli). Escribir aquí para que get_ordered_test_stems
+    # la encuentre sin parches manuales.
+    repeated_txt = stimuli_root / "Scene_Stimuli" / "repeated_stimuli_113_list.txt"
     repeated_txt.write_text("\n".join(filenames) + "\n", encoding="utf-8")
 
     # Presentation lists: una sesión, un run con todos los stems
