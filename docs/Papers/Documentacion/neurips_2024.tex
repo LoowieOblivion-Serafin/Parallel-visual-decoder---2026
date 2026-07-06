@@ -6,7 +6,7 @@
 
 
 % ready for submission
-\usepackage[final]{neurips_2024}
+\usepackage[final,nonatbib]{neurips_2024}
 
 
 % to compile a preprint version, e.g., for submission to arXiv, add add the
@@ -37,7 +37,7 @@
 \usepackage{float} % Para usar la opción [H] y forzar la posición
 
 
-\title{Development of a visual decoder of mental images}
+\title{Development of a visual decoder of mental images with parallel programming}
 
 
 % The \author macro works with any number of authors. There are two commands
@@ -50,13 +50,19 @@
 
 
 \author{
-  Alvaro Jesus Taipe Cotrina\\
+  Alvaro Jesus Taipe Cotrina \\
   School of Computer Science \\
-  Faculty of Science\\
-  Universidad Nacional de Ingeniería\\
+  Faculty of Science \\
+  Universidad Nacional de Ingeniería \\
   Lima, PE 15333 \\
   \texttt{alvaro.taipe.c@uni.pe} 
-  % examples of more authors
+  \And
+  Yoshua Natanael Valverde Gonzales \\
+  School of Computer Science \\
+  Faculty of Science \\
+  Universidad Nacional de Ingeniería \\
+  Lima, PE 15333 \\
+  \texttt{yoshua.valverde.g@uni.pe}
 }
 
 
@@ -67,11 +73,11 @@
 
 
 \begin{abstract}
-   The development of visual decoders capable of reconstructing images from human brain activity has seen unprecedented progress. This report outlines a project to develop an AI model capable of decoding visual stimuli from public fMRI datasets. We review the state-of-the-art, focusing on studies from 2024-2025 that leverage advanced generative and analytical models. The theoretical foundation establishes the mathematical rigor behind the chosen architectures: the \textbf{U-Net} for spatial reconstruction, \textbf{CLIP} for semantic alignment, and \textbf{Latent Diffusion Models (LDM)} for high-fidelity generation. The proposed methodology details a two-module AI: an \textbf{Encoder} trained via regression to map fMRI signals to the CLIP latent space, and a pre-trained \textbf{Generative Decoder} that uses this latent vector as a condition via cross-attention mechanisms to synthesize the final image.
+   The development of visual decoders capable of reconstructing images from human brain activity has seen unprecedented progress. This report outlines a project to develop an AI model capable of decoding visual stimuli from public fMRI datasets, optimized through high-performance parallel computing techniques. We review the state-of-the-art, focusing on generative models from 2024-2025. The theoretical foundation establishes the mathematical rigor behind the chosen architectures: the \textbf{U-Net}, \textbf{CLIP}, and \textbf{Latent Diffusion Models (LDM)}. The proposed methodology details a two-module AI: an Encoder to map fMRI signals to the CLIP latent space, and a Generative Decoder. Furthermore, we justify a parallel data processing architecture using multiprocessing to overcome Python's Global Interpreter Lock (GIL), drastically accelerating the evaluation and metric extraction phases according to Amdahl's Law.
 \end{abstract}
 % RESUMEN 
 \section{Resumen}
-El desarrollo de decodificadores visuales capaces de reconstruir imágenes a partir de la actividad cerebral humana ha experimentado un avance sin precedentes. Este informe describe un proyecto para desarrollar un modelo de IA capaz de decodificar estímulos visuales a partir de conjuntos de datos públicos de RNMf. Revisamos el estado del arte, centrándonos en estudios recientes (2024-2025) que aprovechan modelos generativos avanzados. El fundamento teórico se construye sobre la base matemática de la arquitectura \textbf{U-Net} (reconstrucción espacial), el espacio de \textit{embedding} multimodal de \textbf{CLIP} (alineación semántica) y los \textbf{Modelos de Difusión Latente} (LDM). La metodología propuesta detalla una IA de dos módulos: un \textbf{Codificador} entrenado para mapear señales de RNMf al espacio latente de CLIP, y un \textbf{Decodificador Generativo} pre-entrenado que utiliza este vector latente como condición para sintetizar la imagen final.
+El desarrollo de decodificadores visuales a partir de la actividad cerebral humana ha experimentado un avance sin precedentes. Este informe describe un proyecto para desarrollar un modelo de IA capaz de decodificar estímulos visuales desde conjuntos de datos de RNMf, optimizado mediante técnicas de programación paralela de alto rendimiento. El fundamento teórico se construye sobre la base de la arquitectura \textbf{U-Net}, \textbf{CLIP} y los \textbf{Modelos de Difusión Latente} (LDM). La metodología propone una IA de dos módulos integrados. Adicionalmente, se diseña una arquitectura computacional paralela que aprovecha el multiprocesamiento para eludir el Global Interpreter Lock (GIL) de Python, distribuyendo el procesamiento masivo en múltiples núcleos para acelerar drásticamente la evaluación de métricas de las imágenes generadas, validando el rendimiento de acuerdo con la Ley de Amdahl.
 
 %  INTRODUCCIÓN 
 \section{Introducción}
@@ -79,7 +85,7 @@ La decodificación de la actividad cerebral para externalizar el contenido de la
 
 Sin embargo, la traducción directa de una 'imagen mental' semánticamente rica a una representación digital fotorrealista sigue siendo un desafío mayúsculo.Pues si bien la Resonancia Magnética Funcional (RNMf) nos permite observar la actividad cerebral midiendo la señal \textbf{Blood-Oxygen-Level-Dependent (BOLD)} , estos datos presentan desafíos significativos.
 
-El problema computacional fundamental radica en mapear una señal neuronal, que es intrínsecamente ruidosa, de alta dimensionalidad y variable entre sujetos, a un espacio de salida de imágenes naturales; traducir estos patrones de activación volumétrica, como los vóxeles, en imágenes 2D semánticamente precisas es aún más complejo. Este proyecto busca desarrollar una IA capaz de decodificar imágenes mentales aprovechando los vastos conjuntos de datos públicos de RNMf de alta resolución (7T), como el proporcionado por Allen et al. \cite{2}, que utiliza la señal BOLD como indicador indirecto de la actividad neuronal.
+El problema computacional fundamental radica en mapear una señal neuronal, que es intrínsecamente ruidosa, de alta dimensionalidad y variable entre sujetos, a un espacio de salida de imágenes naturales; traducir estos patrones de activación volumétrica, como los vóxeles, en imágenes 2D semánticamente precisas es aún más complejo. Además, este proceso maneja matrices de datos gigantescas que exigen un alto poder de cómputo. Por consiguiente, este proyecto busca desarrollar una IA capaz de decodificar imágenes mentales aprovechando los vastos conjuntos de datos públicos de RNMf de alta resolución (7T) \cite{2}, aplicando simultáneamente arquitecturas de programación paralela para optimizar y distribuir la carga de evaluación computacional.
 
 Recientemente, la convergencia entre modelos de lenguaje-visión como \textbf{Contrastive Language-Image Pre-training (CLIP)} \cite{8} y modelos generativos probabilísticos como \textbf{Modelos de Difusión Latente (LDM)} \cite{9} ha abierto nuevas puertas para resolver este problema inverso \cite{5, 13}, pues ofrecen una solución al poseer un "diccionario" visual pre-entrenado. Nuestra tarea es enseñar a una IA a navegar este diccionario usando la señal cerebral como guía. 
 \section{Objetivos}
@@ -89,6 +95,7 @@ La meta principal de este proyecto es desarrollar e implementar un sistema de de
     \item Formalizar e implementar un Codificador (Módulo 1) basado en redes neuronales que mapee las señales RNMf al espacio latente multimodal de CLIP, minimizando la pérdida de información semántica.
     \item Integrar el codificador cerebral con un Modelo de Difusión Latente pre-entrenado (Módulo 2) mediante mecanismos de atención cruzada (cross-attention) para guiar la generación de imágenes.
     \item Evaluar la calidad de las reconstrucciones y la viabilidad del uso de espacios latentes semánticos como interfaz cerebro-computadora.
+    \item Diseñar e implementar una arquitectura de ejecución paralela basada en multiprocesamiento (\textit{Multiprocessing}) para eludir las restricciones del GIL de Python, optimizando drásticamente los tiempos de evaluación métrica masiva.
 \end{itemize}
 
 
@@ -155,7 +162,10 @@ La capacidad de la red para aprender relaciones complejas reside en la no-lineal
     \begin{equation}
         w \leftarrow w - \eta \nabla_w \mathcal{L}
     \end{equation}
-    donde:
+    
+    A nivel de arquitectura computacional, este proceso de aprendizaje (\textit{Backpropagation}) impone una dependencia estricta de datos: es una fase \textbf{secuencial} (no paralelizable temporalmente). La actualización de los pesos en la iteración o época $t+1$ no puede efectuarse sin que la época $t$ haya finalizado el cálculo matemático y actualizado los tensores del modelo, por lo cual estas cargas masivas iterativas se delegan exclusivamente al paralelismo espacial de la arquitectura de la GPU, y no al de procesos en CPU.
+    
+    En la formulación de optimización:
     \begin{itemize}
     \item \textbf{$w$ (Pesos):} Representa el vector de parámetros ajustables de la red neuronal.
     \item \textbf{$\eta$ (Tasa de aprendizaje):} Escalar positivo que determina el tamaño del paso en cada iteración de actualización; controla la velocidad de convergencia.
@@ -577,7 +587,16 @@ El LDM ya posee un "prior" visual masivo, aprendido de miles de millones de imá
     \item El Módulo 2 (LDM) interpreta estos embeddings como lo haría con cualquier conditioning CLIP, generando imágenes coherentes.
 \end{enumerate}
 
-Esta estrategia reduce dramáticamente los requisitos de datos y cómputo, aprovechando el conocimiento pre-aprendido del LDM. La clave es que el espacio CLIP actúa como un "puente universal" entre modalidades (texto, imagen, y ahora, actividad cerebral).
+Esta estrategia reduce dramáticamente los requisitos de datos y cómputo, aprovechando el conocimiento pre-aprendido del LDM. La clave es que el espacio CLIP actúa como un "puente universal" entre modalidades (texto, imagen, y ahora, actividad cerebral). 
+
+Adicionalmente, desde la perspectiva de dependencias de ejecución, el proceso de generación de imágenes en el LDM pertenece a la \textbf{Parte Secuencial} del sistema computacional. La red neural crea la representación visual eliminando el ruido en iteraciones sucesivas (típicamente de 20 a 50 pasos de inferencia). Dado que el paso $t-1$ depende matemáticamente del tensor exacto resultante en el paso $t$, este bucle de \textit{denoising} es algorítmicamente estricto y no admite paralelismo temporal basado en hilos o procesos.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Sequential_LDM_vs_Parallel_Metrics.png}
+    \caption{Flujo computacional híbrido: A la izquierda el proceso de denoising estrictamente secuencial, y a la derecha el despliegue de evaluación paralela.}
+    \label{fig:seq_vs_par}
+\end{figure}
 
 \subsection{Teoría de Información en Decodificación Cerebral: Fundamento del Módulo 1}
 Para validar el diseño de la arquitectura fMRI $\rightarrow$ CLIP $\rightarrow$ LDM, recurrimos a la Teoría de Información. Este marco nos permite cuantificar límites teóricos de decodificación y justifica por qué un espacio semántico intermedio (CLIP) es superior a una regresión directa píxel a píxel.
@@ -644,6 +663,20 @@ La decisión crítica de este proyecto es utilizar el espacio de CLIP como inter
     \item \textbf{Universalidad:} Al forzar $f_{enc}(V) \approx z_{CLIP}$, aprovechamos un espacio que ya es invariante a cambios de iluminación o pose irrelevantes, facilitando que el modelo de difusión genere imágenes plausibles incluso si la señal cerebral es incompleta.
 \end{itemize}
 
+\subsection{Limitaciones de Concurrencia en Python y la Ley de Amdahl}
+Dado que el entrenamiento de la red y el proceso iterativo de difusión representan el flujo estrictamente secuencial de la arquitectura, la oportunidad crítica de optimización computacional reside en el preprocesamiento de datos volumétricos (fMRI) y en la validación métrica masiva posterior a la síntesis. 
+
+En el ecosistema de Python, utilizado para orquestar la canalización de IA, la gestión concurrente enfrenta un obstáculo fundamental: el \textbf{Global Interpreter Lock (GIL)} \cite{16}. El GIL asegura que solo un hilo (\textit{thread}) nativo ejecute bytecode de Python a la vez, garantizando la seguridad en el manejo de memoria pero castigando severamente el rendimiento en operaciones vinculadas al procesador (\textit{CPU-bound}). Como respaldan las literaturas académicas sobre computación de alto rendimiento en Python, los hilos estándar dentro del mismo intérprete no logran un paralelismo real para cálculos matemáticos debido a esta restricción \cite{18}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{GIL_vs_Multiprocessing.png}
+    \caption{Diagrama esquemático que ilustra el embotellamiento del GIL en el uso de hilos frente a la distribución independiente de flujos en Multiprocesamiento.}
+    \label{fig:gil_vs_multi}
+\end{figure}
+
+Para resolver este cuello de botella al evaluar las métricas píxel a píxel (como SSIM o Correlación de Pearson) sobre cientos de imágenes reconstruidas, el proyecto se fundamenta en el modelo de \textbf{Paralelismo de Datos} soportado por el \textbf{Multiprocesamiento} (\textit{Multiprocessing}). Al bifurcar instancias independientes del intérprete a nivel del sistema operativo, cada proceso hijo adquiere su propio espacio de memoria en RAM y se enlaza a un núcleo físico distinto del procesador. Así, el problema algorítmico se divide en bloques disjuntos (ej. evaluar la Imagen A no depende de la evaluación de la Imagen B), lo que eleva el rendimiento (\textit{Speedup}) y la eficiencia global en concordancia directa con la \textbf{Ley de Amdahl} \cite{17}. Por otro lado, las operaciones fuertemente vinculadas a latencias de disco (\textit{I/O-bound}), como la lectura sistemática de archivos \texttt{.mat}, retienen la viabilidad para ser aceleradas mediante \textbf{Hilos} convencionales (Threading), en tanto el GIL es liberado explícitamente por el intérprete durante las pausas de entrada/salida \cite{18}.
+
 % METODOLOGÍA 
 \section{Metodología}
 
@@ -663,23 +696,36 @@ La decisión crítica de este proyecto es utilizar el espacio de CLIP como inter
     \end{enumerate}
 \end{itemize}
 
-\subsection{Técnicas e Instrumentos de Recolección y Análisis}
-Se utilizan Fuentes Secundarias procesadas mediante algoritmos de Aprendizaje Profundo. El procedimiento se divide en dos módulos interconectados:
+\subsection{Técnicas e Instrumentos de Ejecución}
+Se utilizan Fuentes Secundarias procesadas mediante algoritmos de Aprendizaje Profundo orquestados en entornos paralelos. El procedimiento algorítmico se divide en fases interconectadas:
 
-\subsubsection{Fase 1: Codificación Cerebral (Módulo 1)}
-Se extraen y normalizan (z-score) los vóxeles de las Regiones de Interés (V1, V2, V3).
+\subsubsection{Fase 1: Codificación Cerebral y Carga Asíncrona (Módulo 1)}
+Se extraen y normalizan (z-score) los vóxeles de las Regiones de Interés (V1, V2, V3). Para mitigar el embotellamiento de I/O en la lectura de matrices gigabyte en disco duro, se instancian \textbf{Hilos (Threading)} que pre-cargan los datos iterativamente hacia la memoria principal, en concurrencia con la ejecución del modelo. Esto es acorde a las bases de programación paralela \cite{19}, donde el solapamiento de operaciones de memoria con el cálculo matemático reduce los tiempos de inanición del procesador.
 \begin{itemize}
-    \item \textbf{Instrumento:} Un \textbf{Perceptrón Multicapa (MLP)} ($f_{enc}$) diseñado para traducir la señal biológica $V$ al espacio latente de CLIP ($z_{pred}$).
-    \item \textbf{Validación:} Minimización del Error Cuadrático Medio (MSE) respecto al vector real $z_I$ de la imagen original (ground truth).
+    \item \textbf{Instrumento:} Un \textbf{Perceptrón Multicapa (MLP)} ($f_{enc}$) que traduce la señal biológica al espacio de CLIP. La fase de optimización (Backpropagation) permanece en ejecución estrictamente secuencial debido a su dependencia matemática.
+    \item \textbf{Validación:} Minimización del Error Cuadrático Medio (MSE) respecto al vector real $z_I$.
 \end{itemize}
 
-\subsubsection{Fase 2: Decodificación Generativa (Módulo 2)}
+\subsubsection{Fase 2: Decodificación Generativa Estricta (Módulo 2)}
 Se utiliza la proyección latente obtenida en la fase anterior para sintetizar la imagen visual.
 \begin{itemize}
-    \item \textbf{Instrumento:} Un \textbf{Latent Diffusion Model (LDM)} pre-entrenado y congelado (ej. Stable Diffusion).
-    \item \textbf{Procedimiento:} El vector $z_{pred}$ se inyecta mediante mecanismos de \textbf{Cross-Attention} en la arquitectura U-Net del modelo. Durante la inferencia, el sistema realiza un proceso iterativo de \textit{denoising} condicionado para transformar ruido aleatorio en la imagen final $I_{decoded}$.
+    \item \textbf{Instrumento:} Un \textbf{Latent Diffusion Model (LDM)} pre-entrenado y congelado.
+    \item \textbf{Procedimiento Secuencial:} El vector $z_{pred}$ condiciona la red U-Net. Durante la inferencia, la generación opera sin paralelismo temporal debido a que el \textit{denoising} iterativo exige que el paso $t$ concluya completamente para originar el cálculo del paso $t-1$.
 \end{itemize}
 
+\subsubsection{Fase 3: Paralelismo de Datos en Evaluación de Métricas}
+Tras reconstruir el \textit{dataset} cerebral en cientos de imágenes digitales (tarea CPU-bound exhaustiva), el sistema evita el uso de bucles secuenciales mono-núcleo que derivarían en latencias prohibitivas.
+\begin{itemize}
+    \item \textbf{Procedimiento Paralelo:} Siguiendo los principios de paralelización explícita \cite{19}, se despliega un \textbf{Pool de Multiprocesamiento}. Cada par computacional $\{\text{Imagen Real } I, \text{ Imagen Decodificada } \hat{I}\}$ se empaca como un trabajo independiente. 
+    \item Si el hardware dispone de $N$ núcleos físicos, el evaluador asigna simultáneamente $N$ tareas a procesos aislados. El sistema calcula en paralelo las costosas métricas (SSIM, PSNR), aprovechando la división de memoria para obviar el GIL de Python y reduciendo drásticamente el tiempo nominal global.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\textwidth]{Data_Parallelism_fMRI.png}
+    \caption{Arquitectura de paralelismo de datos asignando matrices generadas fMRI a tuberías de evaluación simultáneas en múltiples núcleos CPU.}
+    \label{fig:data_parallelism}
+\end{figure}
 
 \section*{Bibliografía}
 \begin{thebibliography}{15}
@@ -714,6 +760,14 @@ Se utiliza la proyección latente obtenida en la fase anterior para sintetizar l
     \bibitem{14} Prince, S. J. D. (2023). \textit{Understanding Deep Learning}. MIT Press.
     
     \bibitem{15} Murphy, K. P. (2023). \textit{Probabilistic Machine Learning: Advanced Topics}. MIT Press.
+
+    \bibitem{16} Van Rossum, G., \& Drake, F. L. (2009). \textit{Python 3 Reference Manual}. CreateSpace.
+    
+    \bibitem{17} Amdahl, G. M. (1967). Validity of the single processor approach to achieving large scale computing capabilities. \textit{Proceedings of the April 18-20, 1967, spring joint computer conference}, 483-485.
+
+    \bibitem{18} Gorelick, M., \& Ozsvald, I. (2020). \textit{High Performance Python: Practical Performant Programming for Humans} (2nd ed.). O'Reilly Media.
+
+    \bibitem{19} Pacheco, P. (2011). \textit{An Introduction to Parallel Programming}. Morgan Kaufmann.
 
 \end{thebibliography}
 
