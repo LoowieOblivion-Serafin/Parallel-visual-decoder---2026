@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import numpy as np, torch, json
 from phase2.adapter_ridge import RidgeAdapter
 from phase2.loader import load_split
