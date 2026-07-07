@@ -91,13 +91,18 @@ def load_sd_unclip_pipeline(
 
     logger.info(f"Cargando SD 2.1 unCLIP desde {repo_id} (dtype={dtype}, cache={cache_dir})")
 
-    pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(
-        repo_id,
-        torch_dtype=dtype,
-        cache_dir=str(cache_dir),
-        variant="fp16" if dtype == torch.bfloat16 else None,
-        use_safetensors=True,
-    )
+    # NO usar variant="fp16": el repo unclip-i2i-l tiene componentes (image_normalizer)
+    # sin pesos fp16, y pedir variant deja el snapshot incompleto -> falla con
+    # "no file named config.json ... image_normalizer". Cargamos los pesos completos
+    # y casteamos a bf16 via torch_dtype (mismo consumo de VRAM en runtime).
+    load_kwargs = dict(torch_dtype=dtype, cache_dir=str(cache_dir))
+    try:
+        pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(
+            repo_id, use_safetensors=True, **load_kwargs
+        )
+    except Exception as exc:
+        logger.warning(f"Carga con safetensors falló ({exc}); reintento sin forzar formato.")
+        pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(repo_id, **load_kwargs)
 
     if enable_xformers and device.type == "cuda":
         try:
