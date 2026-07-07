@@ -261,7 +261,7 @@ def main() -> int:
     out_path = args.out or (eval_dir / "presentacion_pares.html")
 
     if not eval_dir.is_dir():
-        logger.error(f"eval-dir no existe: {eval_dir}. Corre primero visual_evaluator / render_rtx4050.ps1.")
+        logger.error(f"eval-dir no existe: {eval_dir}. Corre primero visual_evaluator / render.ps1.")
         return 1
 
     subjects = iter_subjects(eval_dir, args.subject)

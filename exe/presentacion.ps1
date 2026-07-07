@@ -6,7 +6,7 @@
  parejas [Original] vs [Reconstruccion] y lo abre en el navegador. No necesita
  servidor: el archivo se puede enviar/copiar y abre en cualquier maquina.
 
- Ejecutar DESPUES de render_rtx4050.ps1:
+ Ejecutar DESPUES de render.ps1:
      .\exe\presentacion.ps1
      .\exe\presentacion.ps1 -Subject CSI1 -Thumb 512
 ===============================================================================
@@ -45,7 +45,7 @@ if (-not (Test-Path $py)) {
     exit 1
 }
 if (-not (Test-Path $EvalOutput)) {
-    Write-Host "ERROR: no existe EvalOutput ($EvalOutput). Corre antes:  .\exe\render_rtx4050.ps1" -ForegroundColor Red
+    Write-Host "ERROR: no existe EvalOutput ($EvalOutput). Corre antes:  .\exe\render.ps1" -ForegroundColor Red
     exit 1
 }
 

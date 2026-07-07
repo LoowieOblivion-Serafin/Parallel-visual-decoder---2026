@@ -1,19 +1,21 @@
 <#
 ===============================================================================
- render_rtx4050.ps1 - Reconstruccion visual EN PARALELO (RTX 4050 / 6 GB)
+ render.ps1 - Reconstruccion visual EN PARALELO (cualquier RTX)
 ===============================================================================
- Script de entrada para la maquina del companero. Tras `git pull`:
+ Script de entrada para la maquina de reconstruccion. Tras `git pull`:
 
      1. (una vez) .\setup_env.ps1          # crea env_tesis + torch CUDA
-     2. .\exe\render_rtx4050.ps1           # este script: genera reconstrucciones
+     2. .\exe\render.ps1                    # este script: genera reconstrucciones
      3. .\exe\presentacion.ps1             # arma y abre la presentacion HTML
 
  Corre `phase2.visual_evaluator` (batching GPU + guardado I/O asincrono).
- batch-size 2 = seguro para 6 GB con SD 2.1 unCLIP a 768px en bf16.
+ El batch se AUTO-ajusta por VRAM detectada (6GB->2, 8GB->3, 12GB->4, 16GB->6)
+ con red anti-OOM: si el lote es muy grande, se parte a la mitad solo.
  La primera ejecucion descarga ~5 GB de pesos SD al cache HF.
 
  Todas las rutas son parametros: sobrescribe sin editar el archivo, ej.:
-     .\exe\render_rtx4050.ps1 -Subjects CSI1,CSI2 -BatchSize 1 -Limit 20
+     .\exe\render.ps1 -Subjects CSI1,CSI2,CSI3,CSI4 -Gallery
+     .\exe\render.ps1 -BatchSize 6            # forzar batch manual
 ===============================================================================
 #>
 
@@ -31,8 +33,8 @@ param(
     [string]   $HfCache       = "",
     # Sujetos a reconstruir.
     [string[]] $Subjects      = @("CSI1"),
-    # Tamano de lote GPU. 2 = seguro en 6 GB. Baja a 1 si hay OOM.
-    [int]      $BatchSize     = 2,
+    # Tamano de lote GPU. 0 = AUTO por VRAM (recomendado). >0 = forzar manual.
+    [int]      $BatchSize     = 0,
     # Pasos del scheduler (calidad vs velocidad).
     [int]      $Steps         = 75,
     # Hilos de guardado en disco concurrentes.
@@ -58,7 +60,7 @@ $srcDir   = Join-Path $repoRoot "src"
 $py       = Join-Path $repoRoot "env_tesis\Scripts\python.exe"
 
 Write-Host "======================================================================" -ForegroundColor Cyan
-Write-Host " Reconstruccion visual PARALELA - RTX 4050 (6 GB)" -ForegroundColor Cyan
+Write-Host " Reconstruccion visual PARALELA - RTX (batch auto por VRAM)" -ForegroundColor Cyan
 Write-Host "======================================================================" -ForegroundColor Cyan
 
 # --- Verificar entorno virtual -----------------------------------------------
@@ -80,7 +82,8 @@ Write-Host "Phase2 out   : $Phase2Outputs"
 Write-Host "Eval output  : $EvalOutput"
 Write-Host "HF cache     : $HfCache"
 Write-Host "Sujetos      : $($Subjects -join ', ')"
-Write-Host "batch_size=$BatchSize  steps=$Steps  save_workers=$SaveWorkers  limit=$Limit  cpu=$($Cpu.IsPresent)"
+$batchLabel = if ($BatchSize -gt 0) { "$BatchSize (forzado)" } else { "AUTO (por VRAM)" }
+Write-Host "batch_size=$batchLabel  steps=$Steps  save_workers=$SaveWorkers  limit=$Limit  cpu=$($Cpu.IsPresent)"
 
 # --- Chequeo rapido de GPU ----------------------------------------------------
 & $py -c "import torch,sys; ok=torch.cuda.is_available(); print('CUDA:', ok, (torch.cuda.get_device_name(0) if ok else 'CPU')); sys.exit(0)"
@@ -104,9 +107,10 @@ foreach ($subj in $Subjects) {
     Write-Host "----------------------------------------------------------------------" -ForegroundColor DarkCyan
 
     $cmd = @("-m", "phase2.visual_evaluator", "--subject", $subj,
-             "--batch-size", $BatchSize, "--steps", $Steps, "--save-workers", $SaveWorkers)
-    if ($Limit -gt 0) { $cmd += @("--limit", $Limit) }
-    if ($Cpu)         { $cmd += "--cpu" }
+             "--steps", $Steps, "--save-workers", $SaveWorkers)
+    if ($BatchSize -gt 0) { $cmd += @("--batch-size", $BatchSize) }  # 0 = auto (omitir flag)
+    if ($Limit -gt 0)     { $cmd += @("--limit", $Limit) }
+    if ($Cpu)             { $cmd += "--cpu" }
 
     & $py @cmd
     if ($LASTEXITCODE -ne 0) { Write-Host "[$subj] fallo (exit $LASTEXITCODE)" -ForegroundColor Red; $fail++ }

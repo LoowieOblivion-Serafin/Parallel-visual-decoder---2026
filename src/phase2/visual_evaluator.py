@@ -228,6 +228,84 @@ def _dummy_recon_from_embed(embed: torch.Tensor, size: int = 256, seed: int = 0)
     return Image.fromarray(arr, mode="RGB")
 
 
+# Clase de excepcion de OOM (no existe en torch muy viejos -> fallback a RuntimeError).
+_OOM_ERR = getattr(torch.cuda, "OutOfMemoryError", RuntimeError)
+
+
+def _is_oom(exc: Exception) -> bool:
+    return isinstance(exc, _OOM_ERR) or (
+        isinstance(exc, RuntimeError) and "out of memory" in str(exc).lower()
+    )
+
+
+def auto_batch_size(device: torch.device) -> int:
+    """Elige un batch agresivo-pero-seguro segun la VRAM total detectada.
+    Pensado para SD 2.1 unCLIP a 768px en bf16. Escala por tier para llenar la
+    GPU sin conocer el modelo exacto (4050 6GB, 4070 8/12GB, 4070Ti Super 16GB...)."""
+    if device.type != "cuda":
+        return 2
+    try:
+        total_gb = torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)
+    except Exception:
+        return 2
+    if total_gb >= 15:   # 16GB+  (4070 Ti Super, 4080...)
+        return 6
+    if total_gb >= 11:   # 12GB   (4070 / 4070 Ti desktop)
+        return 4
+    if total_gb >= 7:    # 8GB    (4070 laptop)
+        return 3
+    return 2             # 6GB    (4050 laptop)
+
+
+def _generate_oom_safe(
+    reconstruct_fn,
+    pipeline,
+    embeds: list[torch.Tensor],
+    prompts: list[str],
+    *,
+    device: torch.device,
+    num_inference_steps: int,
+    guidance_scale: float,
+    noise_level: int,
+    seed: int,
+    subject: str,
+) -> list[Image.Image]:
+    """Genera un (sub)lote en GPU con red anti-OOM: si CUDA se queda sin memoria,
+    vacia cache y reintenta partiendo el lote a la mitad, recursivamente, hasta 1.
+    Asi un batch demasiado agresivo se auto-corrige en vez de matar el proceso a
+    mitad de la grabacion."""
+    try:
+        stacked = torch.stack(embeds).to(device=device, dtype=pipeline.unet.dtype)
+        imgs = reconstruct_fn(
+            pipeline,
+            stacked,
+            prompt=prompts,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            noise_level=noise_level,
+            seed=seed,
+        )
+        del stacked
+        return imgs if isinstance(imgs, list) else [imgs]
+    except Exception as exc:
+        if not _is_oom(exc) or len(embeds) == 1:
+            raise
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+        gc.collect()
+        mid = len(embeds) // 2
+        logger.warning(
+            f"[{subject}] OOM en sub-lote de {len(embeds)} -> reintento partido "
+            f"{mid}+{len(embeds) - mid}"
+        )
+        common = dict(device=device, num_inference_steps=num_inference_steps,
+                      guidance_scale=guidance_scale, noise_level=noise_level,
+                      seed=seed, subject=subject)
+        left = _generate_oom_safe(reconstruct_fn, pipeline, embeds[:mid], prompts[:mid], **common)
+        right = _generate_oom_safe(reconstruct_fn, pipeline, embeds[mid:], prompts[mid:], **common)
+        return left + right
+
+
 def run_evaluation(
     subject: str,
     embeds_path: Path,
@@ -242,7 +320,7 @@ def run_evaluation(
     dpi: int,
     grid_rows: int,
     use_cpu: bool,
-    batch_size: int = 2,
+    batch_size: int | None = None,
     save_workers: int = 4,
     dry_run: bool = False,
 ) -> dict:
@@ -255,6 +333,21 @@ def run_evaluation(
         stems = stems[:limit]
 
     device = torch.device("cpu" if use_cpu or not torch.cuda.is_available() else "cuda")
+
+    # Batch: None => auto por VRAM (throughput agresivo, con red anti-OOM abajo).
+    if batch_size is None:
+        batch_size = auto_batch_size(device)
+        if device.type == "cuda":
+            try:
+                props = torch.cuda.get_device_properties(device)
+                logger.info(f"GPU={props.name} | VRAM={props.total_memory / (1024**3):.1f}GB "
+                            f"| batch_size auto={batch_size}")
+            except Exception:
+                logger.info(f"batch_size auto={batch_size}")
+        else:
+            logger.info(f"batch_size auto={batch_size} (CPU)")
+    batch_size = max(1, int(batch_size))
+
     logger.info(f"device={device} | N={len(stems)} | steps={num_inference_steps} | cfg={guidance_scale} | dry_run={dry_run}")
 
     subj_root = out_base / subject
@@ -268,6 +361,7 @@ def run_evaluation(
         torch.cuda.manual_seed_all(seed)
 
     pipeline = None
+    reconstruct_fn = None
     sd_prior_prompts: list[str] = [""]
     if not dry_run:
         # Import tardío: dry-run no requiere diffusers/transformers/accelerate instalados.
@@ -278,6 +372,7 @@ def run_evaluation(
             reconstruct_from_embedding,
         )
         sd_prior_prompts = list(SD_PRIOR_PROMPTS)
+        reconstruct_fn = reconstruct_from_embedding
         pipeline = load_sd_unclip_pipeline(device=device, seed=seed)
         pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
         logger.info(f"Scheduler: {type(pipeline.scheduler).__name__}")
@@ -337,27 +432,25 @@ def run_evaluation(
                                     emb, seed=seed + b * batch_size + k
                                 )
                         else:
-                            sub_embeds = torch.stack([chunk[k][1] for k in gen_local]).to(
-                                device=device, dtype=pipeline.unet.dtype
-                            )
                             sub_prompts = [
                                 sd_prior_prompts[(b * batch_size + k) % len(sd_prior_prompts)]
                                 for k in gen_local
                             ]
-                            imgs = reconstruct_from_embedding(
+                            # Generacion en lote con red anti-OOM (parte a la mitad si revienta).
+                            imgs = _generate_oom_safe(
+                                reconstruct_fn,
                                 pipeline,
-                                sub_embeds,
-                                prompt=sub_prompts,
+                                [chunk[k][1] for k in gen_local],
+                                sub_prompts,
+                                device=device,
                                 num_inference_steps=num_inference_steps,
                                 guidance_scale=guidance_scale,
                                 noise_level=noise_level,
                                 seed=seed,
+                                subject=subject,
                             )
-                            if not isinstance(imgs, list):
-                                imgs = [imgs]
                             for j, k in enumerate(gen_local):
                                 recon_imgs[k] = imgs[j]
-                            del sub_embeds
                     except Exception as exc:
                         failed += len(gen_local)
                         bad = [chunk[k][0] for k in gen_local]
@@ -444,9 +537,11 @@ def main() -> int:
                     help="Filas máximas en el grid agregado.")
     ap.add_argument("--empty-cache-every", type=int, default=4,
                     help="Cada N imágenes llama torch.cuda.empty_cache() (0 = off).")
-    ap.add_argument("--batch-size", type=int, default=2,
+    ap.add_argument("--batch-size", type=int, default=None,
                     help="Imágenes por lote GPU (paralelismo de datos). "
-                         "Default 2, seguro para RTX 4050 (6GB) con SD 2.1 unCLIP 768px bf16.")
+                         "Default: AUTO por VRAM detectada (6→2, 8→3, 12→4, 16→6). "
+                         "Si el batch es muy alto y hay OOM, el lote se parte a la mitad "
+                         "automáticamente. Pasa un entero para forzar.")
     ap.add_argument("--save-workers", type=int, default=4,
                     help="Hilos de CPU para guardado/collage async concurrente con la GPU.")
     ap.add_argument("--cpu", action="store_true", help="Fuerza CPU (fp32, lento).")
