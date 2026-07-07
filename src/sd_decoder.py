@@ -91,18 +91,36 @@ def load_sd_unclip_pipeline(
 
     logger.info(f"Cargando SD 2.1 unCLIP desde {repo_id} (dtype={dtype}, cache={cache_dir})")
 
-    # NO usar variant="fp16": el repo unclip-i2i-l tiene componentes (image_normalizer)
-    # sin pesos fp16, y pedir variant deja el snapshot incompleto -> falla con
-    # "no file named config.json ... image_normalizer". Cargamos los pesos completos
-    # y casteamos a bf16 via torch_dtype (mismo consumo de VRAM en runtime).
+    # Carga tolerante: prueba estrategias en orden y usa la primera que funcione.
+    #   1) variant="fp16" + safetensors -> matchea caches livianos YA existentes
+    #      (p.ej. el models_hf del proyecto de tesis). Carga al instante, 0 descarga.
+    #   2) precision completa safetensors -> si el cache/repo trae pesos fp32.
+    #   3) lo que haya (bin) -> ultimo recurso.
+    # Un cache fp16 COMPLETO (todos los config.json presentes) carga sin bajar nada.
+    # OJO: si el cache esta INCOMPLETO (descarga cortada), el intento fallara y
+    # pasara al siguiente; si nada carga, borrar la carpeta del modelo y re-bajar limpio.
     load_kwargs = dict(torch_dtype=dtype, cache_dir=str(cache_dir))
-    try:
-        pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(
-            repo_id, use_safetensors=True, **load_kwargs
+    attempts: list[dict] = []
+    if dtype == torch.bfloat16:
+        attempts.append({"variant": "fp16", "use_safetensors": True})
+    attempts.append({"use_safetensors": True})
+    attempts.append({})
+    pipeline = None
+    last_exc: Exception | None = None
+    for kw in attempts:
+        try:
+            pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(repo_id, **load_kwargs, **kw)
+            logger.info(f"Pipeline cargado con estrategia: {kw or 'default'}")
+            break
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(f"Carga {kw or 'default'} falló: {exc}")
+    if pipeline is None:
+        raise RuntimeError(
+            f"No se pudo cargar {repo_id} con ninguna estrategia. Cache posiblemente "
+            f"incompleto: borra la carpeta del modelo en {cache_dir} y re-descarga. "
+            f"Ultimo error: {last_exc}"
         )
-    except Exception as exc:
-        logger.warning(f"Carga con safetensors falló ({exc}); reintento sin forzar formato.")
-        pipeline = StableUnCLIPImg2ImgPipeline.from_pretrained(repo_id, **load_kwargs)
 
     if enable_xformers and device.type == "cuda":
         try:
